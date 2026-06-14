@@ -1,0 +1,115 @@
+export const VIEW_TYPE_DEEPSIDIAN = "deepsidian-chat-view";
+
+export type ThinkingLevel = "low" | "med" | "high" | "max";
+
+export const THINKING_LEVELS: ThinkingLevel[] = ["low", "med", "high", "max"];
+
+export const THINKING_LEVEL_LABELS: Record<ThinkingLevel, string> = {
+  low: "Low",
+  med: "Med",
+  high: "High",
+  max: "Max"
+};
+
+/**
+ * 思考深度：除了开启 V4 thinking 模式，更高等级还让 Agent 在给出答案后做多轮“自我反思/再思考”
+ * （审视上一轮答案→必要时再调用工具→输出改进版）。轮数越多越深、越慢、越贵。
+ */
+export const THINKING_CONFIG: Record<ThinkingLevel, { thinking: boolean; reflectionRounds: number }> = {
+  low: { thinking: false, reflectionRounds: 0 },
+  med: { thinking: true, reflectionRounds: 1 },
+  high: { thinking: true, reflectionRounds: 2 },
+  max: { thinking: true, reflectionRounds: 3 }
+};
+
+export function thinkingEnabled(level: ThinkingLevel): boolean {
+  return THINKING_CONFIG[level].thinking || THINKING_CONFIG[level].reflectionRounds > 0;
+}
+
+export const MODEL_OPTIONS = ["deepseek-v4-flash", "deepseek-v4-pro"] as const;
+
+/** 单位：美元 / 100 万 token（2026-06 联网核实）。pro 为官方永久 75% 折后实际价。 */
+export const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  "deepseek-v4-flash": { input: 0.14, output: 0.28 },
+  "deepseek-v4-pro": { input: 0.435, output: 0.87 }
+};
+
+export interface TokenUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
+
+export interface DeepSidianSettings {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  tavilyApiKey: string;
+  temperature: number;
+  includeActiveNote: boolean;
+  maxContextCharacters: number;
+  maxToolSteps: number;
+  enableVaultWrites: boolean;
+  thinkingLevel: ThinkingLevel;
+  enableBash: boolean;
+  bashAutoApprove: boolean;
+}
+
+export interface DeepSeekToolCall {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+export interface DeepSeekMessage {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string | null;
+  tool_call_id?: string;
+  tool_calls?: DeepSeekToolCall[];
+}
+
+export interface DeepSeekToolDefinition {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+export interface DeepSeekChatResult {
+  content: string;
+  message?: DeepSeekMessage;
+  toolCalls?: DeepSeekToolCall[];
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
+}
+
+export interface DeepSidianSession {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: DeepSeekMessage[];
+}
+
+export const DEFAULT_SETTINGS: DeepSidianSettings = {
+  apiKey: "",
+  baseUrl: "https://api.deepseek.com",
+  model: "deepseek-v4-flash",
+  tavilyApiKey: "",
+  temperature: 0.2,
+  includeActiveNote: true,
+  maxContextCharacters: 12000,
+  maxToolSteps: 8,
+  enableVaultWrites: false,
+  thinkingLevel: "low",
+  enableBash: false,
+  bashAutoApprove: false
+};

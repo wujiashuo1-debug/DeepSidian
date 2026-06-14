@@ -1,0 +1,549 @@
+.deepsidian-view {
+  --deepsidian-blue: #4d6bfe;
+  --deepsidian-blue-strong: #3556f6;
+  --deepsidian-orange: #f26b3a;
+  --deepsidian-border: var(--background-modifier-border);
+  --deepsidian-soft: rgba(77, 107, 254, 0.08);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  background: var(--background-primary);
+}
+
+.deepsidian-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--deepsidian-border);
+}
+
+.deepsidian-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-normal);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.deepsidian-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--deepsidian-blue);
+}
+
+.deepsidian-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.deepsidian-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.deepsidian-icon-button,
+.deepsidian-send,
+.deepsidian-secondary-button {
+  border: 1px solid var(--deepsidian-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.deepsidian-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--text-muted);
+  background: var(--background-primary);
+}
+
+.deepsidian-icon-button:hover,
+.deepsidian-send:hover,
+.deepsidian-secondary-button:hover {
+  color: var(--deepsidian-blue);
+  border-color: rgba(77, 107, 254, 0.35);
+  background: var(--deepsidian-soft);
+}
+
+.deepsidian-inline-settings {
+  flex: 0 0 auto;
+  margin: 10px 12px 0;
+  padding: 10px;
+  border: 1px solid var(--deepsidian-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+}
+
+.deepsidian-inline-settings.is-hidden {
+  display: none;
+}
+
+.deepsidian-setting-row {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 9px;
+}
+
+.deepsidian-setting-row label {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.deepsidian-setting-row input[type="text"],
+.deepsidian-setting-row input[type="password"],
+.deepsidian-setting-row select {
+  width: 100%;
+  min-height: 30px;
+  border-radius: 6px;
+}
+
+.deepsidian-setting-row-inline {
+  grid-template-columns: 1fr;
+}
+
+.deepsidian-setting-row-inline label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-normal);
+  font-weight: 500;
+}
+
+.deepsidian-secondary-button {
+  width: 100%;
+  min-height: 30px;
+  color: var(--text-normal);
+  background: var(--background-primary);
+  font-weight: 600;
+}
+
+.deepsidian-transcript {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.deepsidian-bubble {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.deepsidian-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 22px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.deepsidian-empty-art {
+  width: 52px;
+  height: 52px;
+  margin-bottom: 4px;
+  border-radius: 14px;
+  opacity: 0.92;
+  box-shadow: 0 10px 28px rgba(77, 107, 254, 0.16);
+}
+
+.deepsidian-empty-title {
+  color: var(--text-normal);
+  font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.deepsidian-empty-subtitle {
+  max-width: 320px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.deepsidian-bubble {
+  max-width: 100%;
+  margin-bottom: 12px;
+  line-height: 1.6;
+}
+
+.deepsidian-bubble p:first-child {
+  margin-top: 0;
+}
+
+.deepsidian-bubble p:last-child {
+  margin-bottom: 0;
+}
+
+/* AI 回复：无边框、无底色，正文直接铺在面板上（仿 Claudian）。 */
+.deepsidian-bubble-assistant {
+  position: relative;
+  padding: 2px 2px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-normal);
+}
+
+.deepsidian-copy-button {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--deepsidian-border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: var(--background-primary);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+
+.deepsidian-bubble-assistant:hover .deepsidian-copy-button {
+  opacity: 0.85;
+}
+
+.deepsidian-copy-button:hover {
+  opacity: 1;
+  color: var(--deepsidian-blue);
+}
+
+.deepsidian-copy-button svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* 用户消息：靠右的浅灰小气泡，细边框。 */
+.deepsidian-bubble-user {
+  width: fit-content;
+  max-width: 86%;
+  margin-left: auto;
+  padding: 7px 11px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 13px 13px 4px 13px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+}
+
+.deepsidian-bubble.is-streaming {
+  color: var(--text-muted);
+}
+
+.deepsidian-tool-card {
+  margin: 0 0 8px;
+  border: 1px solid var(--deepsidian-border);
+  border-radius: 7px;
+  background: var(--background-primary);
+}
+
+.deepsidian-tool-card.is-error {
+  border-color: rgba(224, 80, 80, 0.36);
+  background: rgba(224, 80, 80, 0.05);
+}
+
+.deepsidian-tool-card.is-running {
+  border-color: rgba(77, 107, 254, 0.38);
+  background: rgba(77, 107, 254, 0.04);
+}
+
+.deepsidian-tool-card summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.deepsidian-tool-name {
+  color: var(--text-normal);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.deepsidian-tool-status {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.deepsidian-tool-args,
+.deepsidian-tool-result {
+  max-height: 170px;
+  margin: 0;
+  padding: 8px 9px;
+  overflow: auto;
+  border-top: 1px solid var(--deepsidian-border);
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.deepsidian-composer {
+  flex: 0 0 auto;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--deepsidian-border);
+  background: var(--background-primary);
+}
+
+.deepsidian-todo-panel {
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(77, 107, 254, 0.32);
+  border-radius: 8px;
+  background: var(--deepsidian-soft);
+}
+
+.deepsidian-todo-panel.is-hidden {
+  display: none;
+}
+
+.deepsidian-todo-header {
+  margin-bottom: 4px;
+  color: var(--deepsidian-blue);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.deepsidian-todo-body {
+  max-height: 150px;
+  overflow-y: auto;
+  color: var(--text-normal);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.deepsidian-todo-body p:first-child {
+  margin-top: 0;
+}
+
+.deepsidian-todo-body p:last-child {
+  margin-bottom: 0;
+}
+
+.deepsidian-sessionbar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  margin-bottom: 6px;
+}
+
+.deepsidian-session-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--deepsidian-border);
+  border-radius: 5px;
+  color: var(--text-muted);
+  background: var(--background-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.deepsidian-session-button.is-active {
+  color: var(--deepsidian-blue);
+  border-color: rgba(77, 107, 254, 0.5);
+  background: var(--deepsidian-soft);
+}
+
+.deepsidian-input-shell {
+  border: 1px solid var(--deepsidian-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+}
+
+.deepsidian-input {
+  width: 100%;
+  min-height: 76px;
+  max-height: 180px;
+  padding: 10px;
+  resize: vertical;
+  border: 0;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.deepsidian-input:focus {
+  box-shadow: none;
+}
+
+.deepsidian-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 6px 6px 8px;
+  border-top: 1px solid var(--deepsidian-border);
+}
+
+.deepsidian-composer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.deepsidian-composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.deepsidian-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--deepsidian-border);
+  border-radius: 11px;
+  color: var(--text-muted);
+  background: var(--background-primary);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.deepsidian-pill:hover {
+  color: var(--deepsidian-blue);
+  border-color: rgba(77, 107, 254, 0.35);
+  background: var(--deepsidian-soft);
+}
+
+.deepsidian-pill-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.deepsidian-pill-icon svg,
+.deepsidian-token-meta svg {
+  width: 12px;
+  height: 12px;
+}
+
+.deepsidian-model-pill {
+  color: var(--deepsidian-orange);
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.deepsidian-thinking-pill.is-on {
+  color: var(--deepsidian-blue);
+  border-color: rgba(77, 107, 254, 0.4);
+  background: var(--deepsidian-soft);
+}
+
+.deepsidian-token-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-faint);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.deepsidian-write-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.deepsidian-write-toggle input {
+  margin: 0;
+}
+
+.deepsidian-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  color: #fff;
+  border-color: var(--deepsidian-blue);
+  background: var(--deepsidian-blue);
+}
+
+.deepsidian-send:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.deepsidian-settings p {
+  color: var(--text-muted);
+  max-width: 680px;
+}
+
+.deepsidian-confirm-desc {
+  margin: 0 0 8px;
+  color: var(--text-muted);
+}
+
+.deepsidian-confirm-cmd {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  max-height: 200px;
+  overflow: auto;
+  border: 1px solid var(--deepsidian-border, var(--background-modifier-border));
+  border-radius: 7px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.deepsidian-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

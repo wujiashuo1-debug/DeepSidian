@@ -1,0 +1,26 @@
+{
+  "name": "deepsidian",
+  "version": "0.1.0",
+  "description": "DeepSeek-powered agent assistant for Obsidian.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "typecheck:fetch-proxy": "npm --prefix fetch-proxy run typecheck",
+    "check": "npm run build && npm run typecheck:fetch-proxy"
+  },
+  "keywords": [
+    "obsidian",
+    "deepseek",
+    "agent"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.17.10",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.24.0",
+    "obsidian": "^1.7.2",
+    "typescript": "^5.7.2"
+  }
+}

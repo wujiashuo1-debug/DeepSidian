@@ -1,0 +1,11 @@
+{
+  "id": "deepsidian",
+  "name": "DeepSidian",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "DeepSeek-powered agent assistant for Obsidian.",
+  "author": "",
+  "authorUrl": "",
+  "fundingUrl": "",
+  "isDesktopOnly": false
+}
