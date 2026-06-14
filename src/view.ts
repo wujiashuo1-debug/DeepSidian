@@ -265,6 +265,7 @@ export class DeepSidianView extends ItemView {
   private sessionCostUsd = 0;
   private currentContextTokens = 0;
   private compacting = false;
+  private turnFirstTokenAt = 0;
 
   constructor(leaf: WorkspaceLeaf, private plugin: DeepSidianPlugin) {
     super(leaf);
@@ -736,7 +737,20 @@ export class DeepSidianView extends ItemView {
     }
     this.appendBubble("user", userText);
 
-    const pendingEl = this.appendBubble("assistant", "正在思考...");
+    // 思考气泡：弹跳的小鲸鱼 + 实时计时；开始流式输出后会被正文替换。
+    const pendingEl = this.transcriptEl.createDiv({ cls: "deepsidian-bubble deepsidian-bubble-assistant" });
+    this.renderThinkingIndicator(pendingEl, "思考中");
+    this.transcriptEl.scrollTo({ top: this.transcriptEl.scrollHeight });
+
+    const thinkingStart = Date.now();
+    this.turnFirstTokenAt = 0;
+    const thinkTimer = window.setInterval(() => {
+      const timeEl = pendingEl.querySelector(".deepsidian-think-time");
+      if (timeEl) {
+        timeEl.textContent = `${((Date.now() - thinkingStart) / 1000).toFixed(1)}s`;
+      }
+    }, 100);
+
     const turnId = this.createTurnId();
     this.activeTurnId = turnId;
 
@@ -757,7 +771,9 @@ export class DeepSidianView extends ItemView {
       this.updateSessionMemory(userText, result.content, turnId);
       await this.persistCurrentSession(userText);
 
-      await this.renderAssistantInto(pendingEl, result.content);
+      // 思考用时 = 到首个输出 token 的时间（没有则取整轮耗时）。
+      const thinkingMs = (this.turnFirstTokenAt || Date.now()) - thinkingStart;
+      await this.renderAssistantInto(pendingEl, result.content, thinkingMs);
 
       // 上下文用量接近预算 → 后台压缩早期对话，下一轮上下文变小、环掉下来。
       void this.maybeCompactHistory();
@@ -771,6 +787,7 @@ export class DeepSidianView extends ItemView {
       pendingEl.setText(`出错了：${message}`);
       new Notice(`DeepSidian 请求失败：${message}`, 8000);
     } finally {
+      window.clearInterval(thinkTimer);
       this.activeTurnId = null;
       this.currentAbort = null;
       this.setBusy(false);
@@ -808,8 +825,11 @@ export class DeepSidianView extends ItemView {
         onToolStart: (toolCall, args) => this.startToolCard(toolCall, args),
         onToolFinish: (card, ok, content) => this.finishToolCard(card as ToolCardHandle, ok, content),
         onTodoUpdate: (markdown) => this.renderTodoPanel(markdown),
-        onReflect: (round, total) => pendingEl.setText(`正在第 ${round}/${total} 轮自我反思…`),
+        onReflect: (round, total) => this.renderThinkingIndicator(pendingEl, `第 ${round}/${total} 轮反思`),
         onAssistantDelta: (content) => {
+          if (!this.turnFirstTokenAt) {
+            this.turnFirstTokenAt = Date.now();
+          }
           latest = content;
           const now = Date.now();
           if (now - lastRender >= 80) {
@@ -1149,9 +1169,42 @@ export class DeepSidianView extends ItemView {
   }
 
   // 渲染完整 Markdown 后再挂复制按钮（在 await 之后，避免被 empty() 清掉）。
-  private async renderAssistantInto(bubbleEl: HTMLElement, content: string) {
+  private async renderAssistantInto(bubbleEl: HTMLElement, content: string, thinkingMs?: number) {
     await this.renderMarkdown(bubbleEl, content);
+
+    if (thinkingMs && thinkingMs > 0) {
+      const badge = bubbleEl.createDiv({ cls: "deepsidian-think-badge" });
+      this.appendWhaleImg(badge, 13);
+      badge.createSpan({ text: `思考 ${(thinkingMs / 1000).toFixed(1)}s` });
+      bubbleEl.insertBefore(badge, bubbleEl.firstChild);
+    }
+
     this.addCopyButton(bubbleEl, content);
+  }
+
+  /** 思考气泡：弹跳的小鲸鱼 + 实时计时（计时由 sendMessage 的定时器更新 .deepsidian-think-time）。 */
+  private renderThinkingIndicator(el: HTMLElement, label: string) {
+    el.empty();
+    const wrap = el.createDiv({ cls: "deepsidian-thinking" });
+    this.appendWhaleImg(wrap, 40, "deepsidian-thinking-whale");
+    const textEl = wrap.createSpan({ cls: "deepsidian-thinking-text" });
+    textEl.createSpan({ text: `${label} ` });
+    textEl.createSpan({ cls: "deepsidian-think-time", text: "0.0s" });
+  }
+
+  /** 插入鲸鱼图；assets/whale.png 不存在时优雅回退到现有 orb 图，避免裂图。 */
+  private appendWhaleImg(parent: HTMLElement, size: number, cls?: string) {
+    const img = parent.createEl("img", {
+      cls,
+      attr: { src: this.plugin.getAssetUrl("assets/whale.png"), alt: "", width: String(size), height: String(size) }
+    });
+    img.addEventListener(
+      "error",
+      () => {
+        img.src = this.plugin.getAssetUrl("assets/deepsidian-orb-512.png");
+      },
+      { once: true }
+    );
   }
 
   private addCopyButton(bubbleEl: HTMLElement, content: string) {

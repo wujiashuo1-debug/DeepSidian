@@ -2676,6 +2676,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     this.sessionCostUsd = 0;
     this.currentContextTokens = 0;
     this.compacting = false;
+    this.turnFirstTokenAt = 0;
   }
   getViewType() {
     return VIEW_TYPE_DEEPSIDIAN;
@@ -3071,7 +3072,17 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       this.timelineEls.clear();
     }
     this.appendBubble("user", userText);
-    const pendingEl = this.appendBubble("assistant", "\u6B63\u5728\u601D\u8003...");
+    const pendingEl = this.transcriptEl.createDiv({ cls: "deepsidian-bubble deepsidian-bubble-assistant" });
+    this.renderThinkingIndicator(pendingEl, "\u601D\u8003\u4E2D");
+    this.transcriptEl.scrollTo({ top: this.transcriptEl.scrollHeight });
+    const thinkingStart = Date.now();
+    this.turnFirstTokenAt = 0;
+    const thinkTimer = window.setInterval(() => {
+      const timeEl = pendingEl.querySelector(".deepsidian-think-time");
+      if (timeEl) {
+        timeEl.textContent = `${((Date.now() - thinkingStart) / 1e3).toFixed(1)}s`;
+      }
+    }, 100);
     const turnId = this.createTurnId();
     this.activeTurnId = turnId;
     try {
@@ -3086,7 +3097,8 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       this.conversation.push({ role: "assistant", content: result.content, turnId });
       this.updateSessionMemory(userText, result.content, turnId);
       await this.persistCurrentSession(userText);
-      await this.renderAssistantInto(pendingEl, result.content);
+      const thinkingMs = (this.turnFirstTokenAt || Date.now()) - thinkingStart;
+      await this.renderAssistantInto(pendingEl, result.content, thinkingMs);
       void this.maybeCompactHistory();
     } catch (error) {
       if (abort.signal.aborted) {
@@ -3097,6 +3109,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       pendingEl.setText(`\u51FA\u9519\u4E86\uFF1A${message}`);
       new import_obsidian4.Notice(`DeepSidian \u8BF7\u6C42\u5931\u8D25\uFF1A${message}`, 8e3);
     } finally {
+      window.clearInterval(thinkTimer);
       this.activeTurnId = null;
       this.currentAbort = null;
       this.setBusy(false);
@@ -3128,8 +3141,11 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
         onToolStart: (toolCall, args) => this.startToolCard(toolCall, args),
         onToolFinish: (card, ok, content) => this.finishToolCard(card, ok, content),
         onTodoUpdate: (markdown) => this.renderTodoPanel(markdown),
-        onReflect: (round, total) => pendingEl.setText(`\u6B63\u5728\u7B2C ${round}/${total} \u8F6E\u81EA\u6211\u53CD\u601D\u2026`),
+        onReflect: (round, total) => this.renderThinkingIndicator(pendingEl, `\u7B2C ${round}/${total} \u8F6E\u53CD\u601D`),
         onAssistantDelta: (content) => {
+          if (!this.turnFirstTokenAt) {
+            this.turnFirstTokenAt = Date.now();
+          }
           latest = content;
           const now = Date.now();
           if (now - lastRender >= 80) {
@@ -3399,9 +3415,38 @@ ${summary}`
     await import_obsidian4.MarkdownRenderer.render(this.app, content, targetEl, "", this);
   }
   // 渲染完整 Markdown 后再挂复制按钮（在 await 之后，避免被 empty() 清掉）。
-  async renderAssistantInto(bubbleEl, content) {
+  async renderAssistantInto(bubbleEl, content, thinkingMs) {
     await this.renderMarkdown(bubbleEl, content);
+    if (thinkingMs && thinkingMs > 0) {
+      const badge = bubbleEl.createDiv({ cls: "deepsidian-think-badge" });
+      this.appendWhaleImg(badge, 13);
+      badge.createSpan({ text: `\u601D\u8003 ${(thinkingMs / 1e3).toFixed(1)}s` });
+      bubbleEl.insertBefore(badge, bubbleEl.firstChild);
+    }
     this.addCopyButton(bubbleEl, content);
+  }
+  /** 思考气泡：弹跳的小鲸鱼 + 实时计时（计时由 sendMessage 的定时器更新 .deepsidian-think-time）。 */
+  renderThinkingIndicator(el, label) {
+    el.empty();
+    const wrap = el.createDiv({ cls: "deepsidian-thinking" });
+    this.appendWhaleImg(wrap, 40, "deepsidian-thinking-whale");
+    const textEl = wrap.createSpan({ cls: "deepsidian-thinking-text" });
+    textEl.createSpan({ text: `${label} ` });
+    textEl.createSpan({ cls: "deepsidian-think-time", text: "0.0s" });
+  }
+  /** 插入鲸鱼图；assets/whale.png 不存在时优雅回退到现有 orb 图，避免裂图。 */
+  appendWhaleImg(parent, size, cls) {
+    const img = parent.createEl("img", {
+      cls,
+      attr: { src: this.plugin.getAssetUrl("assets/whale.png"), alt: "", width: String(size), height: String(size) }
+    });
+    img.addEventListener(
+      "error",
+      () => {
+        img.src = this.plugin.getAssetUrl("assets/deepsidian-orb-512.png");
+      },
+      { once: true }
+    );
   }
   addCopyButton(bubbleEl, content) {
     if (!content.trim()) {

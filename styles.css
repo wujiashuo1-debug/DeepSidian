@@ -258,6 +258,59 @@
   color: var(--text-muted);
 }
 
+/* 思考中：弹跳的小鲸鱼 + 实时计时 */
+.deepsidian-thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 0;
+  color: var(--text-muted);
+}
+
+.deepsidian-thinking-whale {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  animation: deepsidian-whale-bounce 1s ease-in-out infinite;
+  filter: drop-shadow(0 3px 5px rgba(77, 107, 254, 0.28));
+}
+
+@keyframes deepsidian-whale-bounce {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-4deg);
+  }
+  50% {
+    transform: translateY(-9px) rotate(4deg);
+  }
+}
+
+.deepsidian-thinking-text {
+  font-size: 12px;
+}
+
+.deepsidian-think-time {
+  color: var(--deepsidian-blue);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 回答上方的"思考用时"小标 */
+.deepsidian-think-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.deepsidian-think-badge img {
+  width: 13px;
+  height: 13px;
+  object-fit: contain;
+}
+
 .deepsidian-tool-card {
   margin: 0 0 8px;
   border: 1px solid var(--deepsidian-border);
