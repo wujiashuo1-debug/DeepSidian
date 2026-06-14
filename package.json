@@ -8,8 +8,10 @@
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "check:tools": "node scripts/check-tools.mjs",
     "eval:agent": "node scripts/eval-agent-contracts.mjs",
+    "test:unit": "node --import tsx --test src/bashTool.test.ts",
+    "test:fetch-proxy": "npm --prefix fetch-proxy test",
     "typecheck:fetch-proxy": "npm --prefix fetch-proxy run typecheck",
-    "check": "npm run check:tools && npm run eval:agent && npm run build && npm run typecheck:fetch-proxy"
+    "check": "npm run check:tools && npm run eval:agent && npm run test:unit && npm run test:fetch-proxy && npm run build && npm run typecheck:fetch-proxy"
   },
   "keywords": [
     "obsidian",
@@ -23,6 +25,7 @@
     "builtin-modules": "^3.3.0",
     "esbuild": "^0.24.0",
     "obsidian": "^1.7.2",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
 }

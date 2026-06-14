@@ -20,6 +20,10 @@ import { AgentLoop, RequiredToolGroup } from "./agentLoop";
 import { AgentType, executeVaultTool, getToolsForAgentType, ToolContext, UndoSnapshotInput, VAULT_TOOL_DEFINITIONS, WriteConfirmationRequest } from "./vaultTools";
 
 const MAX_HISTORY_MESSAGES = 20;
+// 上下文预算（token）：环形表的分母；用量接近上限即自动压缩早期对话。可调（越大越省压缩、越费 token）。
+const CONTEXT_BUDGET_TOKENS = 60000;
+const COMPACT_AT_RATIO = 0.85;
+const KEEP_RECENT_MESSAGES = 8;
 
 const SYSTEM_PROMPT = `你是 DeepSidian，运行在 Obsidian 内的 DeepSeek 助手。
 你要用中文优先回答，语气简洁、可靠、像一个熟悉用户知识库的协作伙伴。
@@ -259,6 +263,8 @@ export class DeepSidianView extends ItemView {
   private sessionPromptTokens = 0;
   private sessionCompletionTokens = 0;
   private sessionCostUsd = 0;
+  private currentContextTokens = 0;
+  private compacting = false;
 
   constructor(leaf: WorkspaceLeaf, private plugin: DeepSidianPlugin) {
     super(leaf);
@@ -738,6 +744,7 @@ export class DeepSidianView extends ItemView {
       // 始终带工具走 Agent 循环；不再用关键词猜测，避免模型在无工具时“用文字编造”工具调用。
       const result = await this.runAgent(userText, abort.signal, pendingEl);
 
+      this.currentContextTokens = result.contextTokens || this.currentContextTokens;
       this.addUsage(result.usage);
 
       if (abort.signal.aborted) {
@@ -751,6 +758,9 @@ export class DeepSidianView extends ItemView {
       await this.persistCurrentSession(userText);
 
       await this.renderAssistantInto(pendingEl, result.content);
+
+      // 上下文用量接近预算 → 后台压缩早期对话，下一轮上下文变小、环掉下来。
+      void this.maybeCompactHistory();
     } catch (error) {
       if (abort.signal.aborted) {
         pendingEl.setText("已中断。");
@@ -770,6 +780,19 @@ export class DeepSidianView extends ItemView {
   private async runAgent(userText: string, signal: AbortSignal, pendingEl: HTMLElement) {
     const config = THINKING_CONFIG[this.plugin.settings.thinkingLevel];
     const requiredGroups = this.inferRequiredToolGroups(userText);
+
+    // 流式渲染：节流 ~80ms + 串行化，避免并发渲染同一个气泡。
+    let lastRender = 0;
+    let latest = "";
+    let renderChain: Promise<void> = Promise.resolve();
+    const flushStream = () => {
+      renderChain = renderChain
+        .then(() => this.renderMarkdown(pendingEl, latest))
+        .then(() => {
+          this.transcriptEl.scrollTo({ top: this.transcriptEl.scrollHeight });
+        });
+    };
+
     const loop = new AgentLoop({
       client: this.plugin.createClient(),
       tools: VAULT_TOOL_DEFINITIONS,
@@ -785,11 +808,21 @@ export class DeepSidianView extends ItemView {
         onToolStart: (toolCall, args) => this.startToolCard(toolCall, args),
         onToolFinish: (card, ok, content) => this.finishToolCard(card as ToolCardHandle, ok, content),
         onTodoUpdate: (markdown) => this.renderTodoPanel(markdown),
-        onReflect: (round, total) => pendingEl.setText(`正在第 ${round}/${total} 轮自我反思…`)
+        onReflect: (round, total) => pendingEl.setText(`正在第 ${round}/${total} 轮自我反思…`),
+        onAssistantDelta: (content) => {
+          latest = content;
+          const now = Date.now();
+          if (now - lastRender >= 80) {
+            lastRender = now;
+            flushStream();
+          }
+        }
       }
     });
 
-    return loop.run(await this.buildMessages(userText));
+    const result = await loop.run(await this.buildMessages(userText));
+    await renderChain; // 等最后一帧流式渲染落地，避免与 sendMessage 的最终渲染打架
+    return result;
   }
 
   /**
@@ -854,7 +887,6 @@ export class DeepSidianView extends ItemView {
       saveTaskList: (markdown: string) => this.plugin.saveTaskList(markdown),
       describeImage: (dataUrl: string, prompt?: string) =>
         this.plugin.createClient().describeImage(dataUrl, prompt),
-      summarizeText: (text: string, prompt: string) => this.summarizeText(text, prompt),
       confirmWrite: (request: WriteConfirmationRequest) => this.confirmWrite(request),
       recordUndo: (snapshot: UndoSnapshotInput) => this.recordUndo(snapshot),
       confirmCommand: (command: string, description?: string) => this.confirmCommand(command, description)
@@ -904,8 +936,19 @@ export class DeepSidianView extends ItemView {
       });
     }
 
-    // 只回注最近若干轮历史，控制上下文体积与成本（conversation 里只有 user/assistant，裁剪安全）。
-    const recentHistory = this.conversation.slice(-MAX_HISTORY_MESSAGES);
+    // 已压缩的早期对话作为“前情提要”注入；其后的近期消息原样回注。
+    const summarizedCount = Math.min(this.currentSession?.summarizedCount ?? 0, this.conversation.length);
+    const summary = this.currentSession?.summary?.trim();
+
+    if (summary) {
+      messages.push({
+        role: "system",
+        content: `对话前情提要（早期内容的压缩，仅作延续参考）：\n${summary}`
+      });
+    }
+
+    // 未压缩的近期消息（compaction 由 token 预算驱动，会把更早的折进摘要）。再兜底一道防极端长尾。
+    const recentHistory = this.conversation.slice(summarizedCount).slice(-MAX_HISTORY_MESSAGES);
     messages.push(...recentHistory);
     messages.push({
       role: "user",
@@ -1226,21 +1269,6 @@ export class DeepSidianView extends ItemView {
     this.renderSessionBar();
   }
 
-  private async summarizeText(text: string, prompt: string): Promise<string> {
-    const result = await this.plugin.createClient().chat([
-      {
-        role: "system",
-        content: "你是网页摘要助手。只依据给定的网页正文回答，用简明中文，不要编造正文之外的信息。"
-      },
-      {
-        role: "user",
-        content: `网页正文：\n${text.slice(0, 12000)}\n\n请针对以下要求作答：${prompt}`
-      }
-    ]);
-
-    return result.content;
-  }
-
   private getSelectionContext(): string | null {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     const selection = view?.editor.getSelection()?.trim();
@@ -1295,35 +1323,114 @@ export class DeepSidianView extends ItemView {
       return;
     }
 
-    const total = this.sessionPromptTokens + this.sessionCompletionTokens;
+    const ratio = Math.max(0, Math.min(1, this.currentContextTokens / CONTEXT_BUDGET_TOKENS));
+    const pct = Math.round(ratio * 100);
+
     this.tokenMetaEl.empty();
     this.tokenMetaEl.setAttribute(
       "title",
-      `本会话累计：输入 ${this.sessionPromptTokens} / 输出 ${this.sessionCompletionTokens} tokens，估算 $${this.sessionCostUsd.toFixed(4)}`
+      `上下文占用：${this.currentContextTokens} / ${CONTEXT_BUDGET_TOKENS} tokens（${pct}%，达到 ${Math.round(COMPACT_AT_RATIO * 100)}% 自动压缩早期对话）\n` +
+        `本会话累计：输入 ${this.sessionPromptTokens} / 输出 ${this.sessionCompletionTokens} tokens，估算 $${this.sessionCostUsd.toFixed(4)}`
     );
-    setIcon(this.tokenMetaEl.createSpan({ cls: "deepsidian-pill-icon" }), "coins");
-    this.tokenMetaEl.createSpan({
-      text: `${this.formatTokens(total)} · $${this.sessionCostUsd.toFixed(4)}`
+
+    this.renderContextRing(this.tokenMetaEl, ratio);
+    this.tokenMetaEl.createSpan({ text: `${pct}% · $${this.sessionCostUsd.toFixed(4)}` });
+  }
+
+  private renderContextRing(container: HTMLElement, ratio: number) {
+    const size = 16;
+    const stroke = 2.5;
+    const radius = (size - stroke) / 2;
+    const circumference = 2 * Math.PI * radius;
+    const color =
+      ratio >= COMPACT_AT_RATIO ? "#e05050" : ratio >= 0.6 ? "var(--deepsidian-orange)" : "var(--deepsidian-blue)";
+    const center = String(size / 2);
+
+    const svg = container.createSvg("svg", {
+      cls: "deepsidian-context-ring",
+      attr: { viewBox: `0 0 ${size} ${size}`, width: String(size), height: String(size) }
+    });
+    svg.createSvg("circle", {
+      attr: {
+        cx: center,
+        cy: center,
+        r: String(radius),
+        fill: "none",
+        stroke: "var(--background-modifier-border)",
+        "stroke-width": String(stroke)
+      }
+    });
+    svg.createSvg("circle", {
+      attr: {
+        cx: center,
+        cy: center,
+        r: String(radius),
+        fill: "none",
+        stroke: color,
+        "stroke-width": String(stroke),
+        "stroke-dasharray": `${(ratio * circumference).toFixed(2)} ${circumference.toFixed(2)}`,
+        "stroke-linecap": "round",
+        transform: `rotate(-90 ${center} ${center})`
+      }
     });
   }
 
-  private formatTokens(value: number): string {
-    if (value >= 1_000_000) {
-      return `${(value / 1_000_000).toFixed(2)}M`;
-    }
-
-    if (value >= 1000) {
-      return `${(value / 1000).toFixed(1)}k`;
-    }
-
-    return String(value);
-  }
 
   private resetSessionUsage() {
     this.sessionPromptTokens = 0;
     this.sessionCompletionTokens = 0;
     this.sessionCostUsd = 0;
+    this.currentContextTokens = 0;
     this.renderTokenMeta();
+  }
+
+  /** 上下文用量接近预算时，把"早期对话"增量压成摘要，缩小后续上下文（环也随之回落）。 */
+  private async maybeCompactHistory() {
+    if (this.compacting || !this.currentSession) {
+      return;
+    }
+
+    const ratio = this.currentContextTokens / CONTEXT_BUDGET_TOKENS;
+    const summarizedCount = this.currentSession.summarizedCount ?? 0;
+    const compactableCount = this.conversation.length - summarizedCount - KEEP_RECENT_MESSAGES;
+
+    if (ratio < COMPACT_AT_RATIO || compactableCount <= 0) {
+      return;
+    }
+
+    this.compacting = true;
+
+    try {
+      const batch = this.conversation.slice(summarizedCount, summarizedCount + compactableCount);
+      this.currentSession.summary = await this.summarizeHistory(this.currentSession.summary, batch);
+      this.currentSession.summarizedCount = summarizedCount + compactableCount;
+      await this.persistCurrentSession();
+    } catch {
+      // 摘要失败就维持现状，绝不影响后续对话。
+    } finally {
+      this.compacting = false;
+    }
+  }
+
+  private async summarizeHistory(existing: string | undefined, batch: DeepSeekMessage[]): Promise<string> {
+    const transcript = batch
+      .map((message) => `${message.role === "user" ? "用户" : "助手"}：${(message.content ?? "").slice(0, 1500)}`)
+      .join("\n");
+    const prior = existing?.trim() ? `已有摘要：\n${existing.trim()}\n\n` : "";
+
+    const result = await this.plugin.createClient().chat([
+      {
+        role: "system",
+        content:
+          "你是对话压缩助手。把对话压成简洁中文要点，保留：用户的目标与偏好、已确定的事实/文件路径/链接、已完成与未完成事项、关键结论。合并进已有摘要、去重，控制在约 400 字内，只输出摘要本身。"
+      },
+      {
+        role: "user",
+        content: `${prior}需要合并进摘要的新对话：\n${transcript}`
+      }
+    ]);
+
+    return result.content.trim() || existing?.trim() || "";
   }
 
   private formatSessionMemory(): string | null {

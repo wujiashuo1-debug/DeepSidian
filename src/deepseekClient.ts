@@ -32,6 +32,21 @@ function abortError(): Error {
   return error;
 }
 
+interface StreamChunk {
+  choices?: Array<{
+    delta?: {
+      content?: string;
+      tool_calls?: Array<{
+        index?: number;
+        id?: string;
+        type?: string;
+        function?: { name?: string; arguments?: string };
+      }>;
+    };
+  }>;
+  usage?: DeepSeekChatResult["usage"];
+}
+
 export class DeepSeekClient {
   constructor(private settings: DeepSidianSettings) {}
 
@@ -93,10 +108,14 @@ export class DeepSeekClient {
     return content;
   }
 
-  async streamChat(
+  /**
+   * 流式补全：边吐字（onDelta）边解析 OpenAI 风格的 tool_call 增量。
+   * 返回时把累积的 tool_calls 组装好，调用方按是否有 tool_calls 决定继续循环还是收口。
+   */
+  async streamCompletion(
     messages: DeepSeekMessage[],
-    onDelta: (delta: string) => void,
-    signal?: AbortSignal
+    tools: DeepSeekToolDefinition[] = [],
+    options: CompletionOptions & { onDelta?: (delta: string) => void } = {}
   ): Promise<DeepSeekChatResult> {
     const apiKey = this.settings.apiKey.trim();
 
@@ -104,26 +123,37 @@ export class DeepSeekClient {
       throw new Error("缺少 DeepSeek API Key。");
     }
 
+    if (options.signal?.aborted) {
+      throw abortError();
+    }
+
     const baseUrl = this.settings.baseUrl.trim().replace(/\/+$/, "");
+    const body: Record<string, unknown> = {
+      model: this.settings.model,
+      messages: messages.map((message) => this.serializeMessage(message)),
+      temperature: this.settings.temperature,
+      stream: true,
+      stream_options: {
+        include_usage: true
+      },
+      thinking: {
+        type: options.thinking ? "enabled" : "disabled"
+      }
+    };
+
+    if (tools.length) {
+      body.tools = tools;
+      body.tool_choice = "auto";
+    }
+
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
-      signal,
+      signal: options.signal,
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        model: this.settings.model,
-        messages: messages.map((message) => this.serializeMessage(message)),
-        temperature: this.settings.temperature,
-        stream: true,
-        stream_options: {
-          include_usage: true
-        },
-        thinking: {
-          type: "disabled"
-        }
-      })
+      body: JSON.stringify(body)
     });
 
     if (!response.ok) {
@@ -139,6 +169,7 @@ export class DeepSeekClient {
     let buffer = "";
     let content = "";
     let usage: DeepSeekChatResult["usage"];
+    const toolAcc = new Map<number, { id: string; name: string; arguments: string }>();
 
     try {
       while (true) {
@@ -162,30 +193,40 @@ export class DeepSeekClient {
           const data = trimmed.slice(5).trim();
 
           if (data === "[DONE]") {
-            return {
-              content,
-              usage
-            };
+            return this.assembleStreamResult(content, toolAcc, usage);
           }
 
           try {
-            const chunk = JSON.parse(data) as {
-              choices?: Array<{
-                delta?: {
-                  content?: string;
-                };
-              }>;
-              usage?: DeepSeekChatResult["usage"];
-            };
-            const delta = chunk.choices?.[0]?.delta?.content ?? "";
+            const chunk = JSON.parse(data) as StreamChunk;
 
             if (chunk.usage) {
               usage = chunk.usage;
             }
 
-            if (delta) {
-              content += delta;
-              onDelta(delta);
+            const delta = chunk.choices?.[0]?.delta;
+
+            if (delta?.content) {
+              content += delta.content;
+              options.onDelta?.(delta.content);
+            }
+
+            for (const call of delta?.tool_calls ?? []) {
+              const index = call.index ?? 0;
+              const acc = toolAcc.get(index) ?? { id: "", name: "", arguments: "" };
+
+              if (call.id) {
+                acc.id = call.id;
+              }
+
+              if (call.function?.name) {
+                acc.name = call.function.name;
+              }
+
+              if (call.function?.arguments) {
+                acc.arguments += call.function.arguments;
+              }
+
+              toolAcc.set(index, acc);
             }
           } catch {
             // Ignore malformed stream keepalive chunks.
@@ -193,16 +234,39 @@ export class DeepSeekClient {
         }
       }
     } catch (error) {
-      // 用户中断时返回已收集到的部分内容，而不是当成错误抛出。
-      if (signal?.aborted) {
-        return { content, usage };
+      // 用户中断时返回已收集到的部分结果，而不是当成错误抛出。
+      if (options.signal?.aborted) {
+        return this.assembleStreamResult(content, toolAcc, usage);
       }
 
       throw error;
     }
 
+    return this.assembleStreamResult(content, toolAcc, usage);
+  }
+
+  private assembleStreamResult(
+    content: string,
+    toolAcc: Map<number, { id: string; name: string; arguments: string }>,
+    usage: DeepSeekChatResult["usage"]
+  ): DeepSeekChatResult {
+    const toolCalls: DeepSeekToolCall[] = [...toolAcc.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([, acc], position) => ({
+        id: acc.id || `call_${position}`,
+        type: "function" as const,
+        function: { name: acc.name, arguments: acc.arguments }
+      }))
+      .filter((call) => call.function.name);
+
     return {
       content,
+      message: {
+        role: "assistant",
+        content: content || null,
+        tool_calls: toolCalls.length ? toolCalls : undefined
+      },
+      toolCalls,
       usage
     };
   }

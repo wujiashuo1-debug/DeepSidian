@@ -110,6 +110,9 @@ export interface DeepSidianSession {
   toolRuns?: DeepSidianToolRun[];
   undoSnapshots?: DeepSidianUndoSnapshot[];
   memory?: DeepSidianSessionMemory;
+  /** 滚动压缩摘要：覆盖 conversation 前 summarizedCount 条消息的中文要点。 */
+  summary?: string;
+  summarizedCount?: number;
 }
 
 export interface DeepSidianToolRun {

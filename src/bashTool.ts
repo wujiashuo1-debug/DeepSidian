@@ -72,7 +72,8 @@ export async function runBashCommand(
 }
 
 const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
-  { pattern: /\brm\s+(-[a-z]*\s+)*-[a-z]*r[a-z]*f|\brm\s+(-[a-z]*\s+)*-[a-z]*f[a-z]*r/i, reason: "递归强制删除（rm -rf）" },
+  // rm 同时带"递归"和"强制"标志即拦截，无论合写(-rf)还是分开(-r -f / --recursive --force)。
+  { pattern: /\brm\b(?=[^\n]*(?:\s-[a-zA-Z]*r|--recursive))(?=[^\n]*(?:\s-[a-zA-Z]*f|--force))/i, reason: "递归强制删除（rm -r -f）" },
   { pattern: /\bsudo\b/i, reason: "提权执行（sudo）" },
   { pattern: /\bmkfs\b/i, reason: "格式化文件系统（mkfs）" },
   { pattern: /\bdd\b[^\n]*\bof=\s*\/dev\//i, reason: "向块设备写入（dd of=/dev/...）" },

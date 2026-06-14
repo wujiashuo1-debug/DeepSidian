@@ -1,6 +1,7 @@
 import { App, FileSystemAdapter, MarkdownView, normalizePath, requestUrl, TFile } from "obsidian";
 import { DeepSeekToolDefinition, DeepSidianSettings } from "./types";
 import { findBlockedReason, runBashCommand } from "./bashTool";
+import { webFetch as fetchWebPageDirect } from "./webFetch";
 
 const MAX_TOOL_OUTPUT = 16000;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -40,8 +41,6 @@ export interface ToolContext {
   describeImage?: (dataUrl: string, prompt?: string) => Promise<string>;
   /** 派发子任务 Agent；仅主 Agent 提供，子 Agent 不提供以保证深度 ≤ 1。 */
   dispatchAgent?: (task: string, agentType: AgentType) => Promise<string>;
-  /** 针对长文本（如网页正文）按 prompt 出摘要，省 token。 */
-  summarizeText?: (text: string, prompt: string) => Promise<string>;
   /** 写入库或编辑器前的用户确认；返回 false 表示拒绝。 */
   confirmWrite?: (request: WriteConfirmationRequest) => Promise<boolean>;
   /** 写入成功后记录撤销快照。 */
@@ -927,13 +926,9 @@ async function webFetch(args: Record<string, unknown>): Promise<ToolResult> {
       },
       body: JSON.stringify({ url, maxBytes })
     });
-  } catch (error) {
-    return {
-      ok: false,
-      content: `无法连接抓取代理 ${FETCH_PROXY_URL}，请先启动 fetch-proxy 后端（cd fetch-proxy && npm run dev）。${
-        error instanceof Error ? error.message : String(error)
-      }`
-    };
+  } catch {
+    // 代理没启动 / 连不上：回退到 Obsidian 原生 requestUrl 直抓（提取质量稍弱，但不至于硬失败）。
+    return await webFetchDirect(url, maxBytes);
   }
 
   const data = parseJson(response.text);
@@ -956,6 +951,25 @@ async function webFetch(args: Record<string, unknown>): Promise<ToolResult> {
     ok: true,
     content: `[source: ${source}]\n${text}${truncatedNote}`
   };
+}
+
+// 抓取代理不可用时的兜底：直接用 Obsidian 的 requestUrl 抓取并做轻量提取。
+async function webFetchDirect(url: string, maxBytes: number): Promise<ToolResult> {
+  try {
+    const result = await fetchWebPageDirect(url, { max_bytes: maxBytes });
+    const source = result.finalUrl || url;
+    const truncatedNote = result.truncated ? `\n\n[正文已截断，原始约 ${result.byteCount} 字节]` : "";
+
+    return {
+      ok: true,
+      content: `[source: ${source}]（抓取代理未启动，已用内置直抓）\n${result.text}${truncatedNote}`
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      content: `抓取失败：代理未启动，内置直抓也失败。${error instanceof Error ? error.message : String(error)}`
+    };
+  }
 }
 
 const READ_IMAGE_PROMPTS: Record<"ocr" | "describe" | "auto", string> = {

@@ -10,6 +10,8 @@ export interface AgentCallbacks {
   onTodoUpdate?: (markdown: string) => void;
   /** 进入第 round/total 轮自我反思前回调，用于更新状态提示。 */
   onReflect?: (round: number, total: number) => void;
+  /** 流式：每收到一点正文就回调当前累计内容，用于实时渲染。 */
+  onAssistantDelta?: (content: string) => void;
 }
 
 export type RequiredToolGroup = "vault" | "web" | "write" | "image" | "bash";
@@ -56,6 +58,8 @@ export interface AgentRunResult {
   aborted: boolean;
   steps: number;
   usage: TokenUsage;
+  /** 最后一次请求的 prompt_tokens，近似“当前上下文占用了多少 token”，用于环形表与自动压缩。 */
+  contextTokens: number;
 }
 
 /**
@@ -66,23 +70,31 @@ export class AgentLoop {
   private todoMessageIndex: number | null = null;
   private promptTokens = 0;
   private completionTokens = 0;
+  private lastPromptTokens = 0;
+  private usedAnyTool = false;
 
   constructor(private options: AgentLoopOptions) {}
 
   async run(messages: DeepSeekMessage[]): Promise<AgentRunResult> {
     this.promptTokens = 0;
     this.completionTokens = 0;
+    this.lastPromptTokens = 0;
+    this.usedAnyTool = false;
     const reflectionRounds = Math.max(0, Math.min(5, this.options.reflectionRounds ?? 0));
 
     let phase = await this.runPhase(messages, this.options.requireToolUse === true);
 
+    // 闲聊优化：没用过任何工具、且回答很短时，跳过反思——省 token/延迟，复杂或带工具的回答才深挖。
+    const trivialChat = !phase.aborted && !this.usedAnyTool && phase.content.trim().length < 400;
+    const effectiveReflections = trivialChat ? 0 : reflectionRounds;
+
     // 高思考等级：给出答案后再做若干轮自我反思，每轮把上一答案喂回让模型审视并改进。
-    for (let round = 1; round <= reflectionRounds && !phase.aborted; round += 1) {
+    for (let round = 1; round <= effectiveReflections && !phase.aborted; round += 1) {
       if (this.options.signal?.aborted) {
         break;
       }
 
-      this.options.callbacks?.onReflect?.(round, reflectionRounds);
+      this.options.callbacks?.onReflect?.(round, effectiveReflections);
       messages.push({ role: "assistant", content: phase.content });
       messages.push({ role: "user", content: REFLECTION_PROMPT });
       phase = await this.runPhase(messages, false);
@@ -92,7 +104,8 @@ export class AgentLoop {
       content: phase.content,
       aborted: phase.aborted,
       steps: phase.steps,
-      usage: this.makeUsage()
+      usage: this.makeUsage(),
+      contextTokens: this.lastPromptTokens
     };
   }
 
@@ -111,13 +124,25 @@ export class AgentLoop {
         return { content: "已中断。", aborted: true, steps: step };
       }
 
-      const result = await client.createCompletion(messages, tools, {
+      let streamed = "";
+      const result = await client.streamCompletion(messages, tools, {
         thinking: this.options.thinking,
-        signal
+        signal,
+        onDelta: (delta) => {
+          streamed += delta;
+          callbacks?.onAssistantDelta?.(streamed);
+        }
       });
       this.promptTokens += result.usage?.prompt_tokens ?? 0;
       this.completionTokens += result.usage?.completion_tokens ?? 0;
+      if (result.usage?.prompt_tokens) {
+        this.lastPromptTokens = result.usage.prompt_tokens;
+      }
       const toolCalls = result.toolCalls ?? [];
+
+      if (toolCalls.length) {
+        this.usedAnyTool = true;
+      }
 
       if (!toolCalls.length) {
         if (requireToolUse && tools.length && !retriedMissingRequiredTool) {

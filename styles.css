@@ -544,6 +544,12 @@
   height: 12px;
 }
 
+.deepsidian-token-meta svg.deepsidian-context-ring {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
 .deepsidian-model-pill {
   color: var(--deepsidian-orange);
   font-weight: 700;
