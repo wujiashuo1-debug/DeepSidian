@@ -323,7 +323,6 @@ var DEFAULT_SETTINGS = {
   apiKey: "",
   baseUrl: "https://api.deepseek.com",
   model: "deepseek-v4-flash",
-  tavilyApiKey: "",
   temperature: 0.2,
   includeActiveNote: true,
   maxContextCharacters: 12e3,
@@ -375,14 +374,6 @@ var DeepSidianSettingTab = class extends import_obsidian2.PluginSettingTab {
         this.plugin.settings.model = value;
         await this.plugin.saveSettings();
       });
-    });
-    new import_obsidian2.Setting(containerEl).setName("Tavily API Key").setDesc("\u53EF\u9009\u3002\u586B\u5199\u540E\u542F\u7528 web_search \u8054\u7F51\u641C\u7D22\u5DE5\u5177\u3002").addText((text) => {
-      text.setPlaceholder("tvly-...").setValue(this.plugin.settings.tavilyApiKey).onChange(async (value) => {
-        this.plugin.settings.tavilyApiKey = value.trim();
-        await this.plugin.saveSettings();
-      });
-      text.inputEl.type = "password";
-      text.inputEl.autocomplete = "off";
     });
     new import_obsidian2.Setting(containerEl).setName("Temperature").setDesc("\u8D8A\u4F4E\u8D8A\u7A33\u5B9A\uFF0C\u8D8A\u9AD8\u8D8A\u53D1\u6563\u3002").addSlider((slider) => {
       slider.setLimits(0, 1.5, 0.1).setDynamicTooltip().setValue(this.plugin.settings.temperature).onChange(async (value) => {
@@ -756,28 +747,6 @@ var VAULT_TOOL_DEFINITIONS = [
   {
     type: "function",
     function: {
-      name: "web_search",
-      description: "\u8054\u7F51\u641C\u7D22\u7F51\u9875\u5019\u9009\u7ED3\u679C\u3002\u9700\u8981\u7528\u6237\u5728\u8BBE\u7F6E\u4E2D\u914D\u7F6E Tavily API Key\u3002\u9002\u5408\u7528\u6237\u6CA1\u6709\u7ED9\u5177\u4F53 URL\u3001\u53EA\u7ED9\u4E3B\u9898\u6216\u5A92\u4F53\u6765\u6E90\u8BA9\u4F60\u627E\u8D44\u6599\u65F6\u4F7F\u7528\uFF1B\u901A\u5E38\u5148 web_search\uFF0C\u518D\u5BF9\u6700\u76F8\u5173 URL \u8C03 web_fetch\u3002",
-      parameters: {
-        type: "object",
-        required: ["query"],
-        properties: {
-          query: {
-            type: "string",
-            description: "\u641C\u7D22\u5173\u952E\u8BCD\uFF0C\u4F8B\u5982 BBC climate change latest\u3002"
-          },
-          limit: {
-            type: "number",
-            description: "\u6700\u591A\u8FD4\u56DE\u591A\u5C11\u6761\u7ED3\u679C\uFF0C\u9ED8\u8BA4 5\uFF0C\u6700\u5927 10\u3002"
-          }
-        },
-        additionalProperties: false
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
       name: "read_image",
       description: "\u8BFB\u53D6\u5E93\u5185\u56FE\u7247\u6216\u56FE\u7247 URL\uFF0C\u8C03\u7528\u89C6\u89C9\u6A21\u578B\u8BC6\u522B\u56FE\u7247\u3002\u53EF\u7528 mode \u9009\u62E9\uFF1Aocr \u53EA\u9010\u5B57\u63D0\u53D6\u6587\u5B57\u3001describe \u53EA\u505A\u89C6\u89C9\u63CF\u8FF0\u3001auto \u4E24\u8005\u90FD\u505A\uFF08\u9ED8\u8BA4\uFF09\u3002\u9002\u5408\u770B\u622A\u56FE\u3001\u56FE\u8868\u3001\u7167\u7247\u3001\u5916\u94FE\u56FE\u7247\u6216\u63D0\u53D6\u56FE\u4E2D\u6587\u5B57\u65F6\u4F7F\u7528\u3002",
       parameters: {
@@ -917,7 +886,6 @@ var READ_ONLY_TOOL_NAMES = [
   "search_notes",
   "open_note",
   "web_fetch",
-  "web_search",
   "read_image"
 ];
 var AGENT_TOOLSETS = {
@@ -959,8 +927,6 @@ async function executeVaultTool(context, name, rawArgs) {
         return await editFile(context, args);
       case "web_fetch":
         return await webFetch(args);
-      case "web_search":
-        return await webSearch(context, args);
       case "read_image":
         return await readImage(context, args);
       case "download_image":
@@ -1360,61 +1326,6 @@ async function webFetch(args) {
     ok: true,
     content: `[source: ${source}]
 ${text}${truncatedNote}`
-  };
-}
-async function webSearch({ settings }, args) {
-  var _a, _b;
-  const apiKey = settings.tavilyApiKey.trim();
-  const query = typeof args.query === "string" ? args.query.trim() : "";
-  if (!apiKey) {
-    return {
-      ok: false,
-      content: "web_search \u672A\u914D\u7F6E\u3002\u8BF7\u5728 DeepSidian \u8BBE\u7F6E\u91CC\u586B\u5199 Tavily API Key\u3002"
-    };
-  }
-  if (!query) {
-    return {
-      ok: false,
-      content: "query \u4E0D\u80FD\u4E3A\u7A7A\u3002"
-    };
-  }
-  const limit = clampNumber(args.limit, 5, 1, 10);
-  const response = await (0, import_obsidian3.requestUrl)({
-    url: "https://api.tavily.com/search",
-    method: "POST",
-    throw: false,
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      api_key: apiKey,
-      query,
-      max_results: limit,
-      search_depth: "basic"
-    })
-  });
-  if (response.status < 200 || response.status >= 300) {
-    return {
-      ok: false,
-      content: `\u641C\u7D22\u5931\u8D25\uFF1AHTTP ${response.status} ${(_a = response.text) != null ? _a : ""}`.trim()
-    };
-  }
-  const payload = parseJson((_b = response.json) != null ? _b : response.text);
-  const results = Array.isArray(payload.results) ? payload.results : [];
-  const lines = results.slice(0, limit).map((item, index) => {
-    if (!isRecord(item)) {
-      return `${index + 1}. ${String(item)}`;
-    }
-    const title = typeof item.title === "string" ? item.title : "Untitled";
-    const url = typeof item.url === "string" ? item.url : "";
-    const content = typeof item.content === "string" ? item.content : "";
-    return `${index + 1}. ${title}
-${url}
-${content.slice(0, 300)}`;
-  });
-  return {
-    ok: true,
-    content: lines.length ? lines.join("\n\n") : "\u6CA1\u6709\u641C\u7D22\u7ED3\u679C\u3002"
   };
 }
 var READ_IMAGE_PROMPTS = {
@@ -1875,11 +1786,12 @@ var REFLECTION_PROMPT = `\u8BF7\u4E25\u683C\u81EA\u6211\u5BA1\u89C6\u4F60\u4E0A\
 var REQUIRED_TOOL_RETRY_PROMPT = `\u8FD9\u4E2A\u8BF7\u6C42\u6D89\u53CA\u53EF\u9A8C\u8BC1\u7684\u5916\u90E8\u52A8\u4F5C\u6216\u5E93\u5185\u52A8\u4F5C\uFF0C\u4F46\u4F60\u4E0A\u4E00\u8F6E\u6CA1\u6709\u6210\u529F\u5B8C\u6210\u5FC5\u8981\u5DE5\u5177\u8C03\u7528\u3002\u8BF7\u91CD\u65B0\u5904\u7406\uFF1A
 - \u9700\u8981\u8BFB\u53D6\u3001\u641C\u7D22\u3001\u6293\u53D6\u3001\u5199\u5165\u3001\u6253\u5F00\u3001\u7F16\u8F91\u3001\u4E0B\u8F7D\u3001\u770B\u56FE\u6216\u6267\u884C\u547D\u4EE4\u65F6\uFF0C\u5FC5\u987B\u5148\u8C03\u7528\u5BF9\u5E94\u5DE5\u5177\u3002
 - \u53EA\u6709\u5DE5\u5177\u8FD4\u56DE ok:true \u540E\uFF0C\u624D\u80FD\u8BF4\u201C\u5DF2\u8BFB\u53D6 / \u5DF2\u641C\u7D22 / \u5DF2\u6293\u53D6 / \u5DF2\u5199\u5165 / \u5DF2\u5B8C\u6210\u201D\u3002
-- \u5982\u679C\u7F3A\u5C11 URL\u3001web_search \u672A\u914D\u7F6E\u3001fetch-proxy \u672A\u542F\u52A8\u3001\u5199\u5165\u672A\u5F00\u542F\u6216\u5176\u5B83\u6761\u4EF6\u4E0D\u8DB3\uFF0C\u76F4\u63A5\u8BF4\u660E\u201C\u5C1A\u672A\u6267\u884C\u201D\u4EE5\u53CA\u539F\u56E0\uFF0C\u4E0D\u8981\u627F\u8BFA\u201C\u9A6C\u4E0A\u201D\u3001\u4E0D\u8981\u7F16\u9020\u7ED3\u679C\u3002`;
+- \u672C\u52A9\u624B\u6CA1\u6709\u8054\u7F51\u641C\u7D22\u80FD\u529B\uFF1A\u7528\u6237\u53EA\u7ED9\u4E86\u4E3B\u9898/\u6CA1\u6709\u5177\u4F53\u94FE\u63A5\u65F6\uFF0C\u4E0D\u8981\u5047\u88C5\u641C\u7D22\uFF0C\u76F4\u63A5\u8BF4\u660E\u65E0\u6CD5\u8054\u7F51\u641C\u7D22\u3001\u53EF\u57FA\u4E8E\u5DF2\u6709\u77E5\u8BC6\u56DE\u7B54\uFF0C\u5E76\u8BF7\u5BF9\u65B9\u63D0\u4F9B URL\u3002
+- \u5982\u679C\u7F3A\u5C11 URL\u3001fetch-proxy \u672A\u542F\u52A8\u3001\u5199\u5165\u672A\u5F00\u542F\u6216\u5176\u5B83\u6761\u4EF6\u4E0D\u8DB3\uFF0C\u76F4\u63A5\u8BF4\u660E\u201C\u5C1A\u672A\u6267\u884C\u201D\u4EE5\u53CA\u539F\u56E0\uFF0C\u4E0D\u8981\u627F\u8BFA\u201C\u9A6C\u4E0A\u201D\u3001\u4E0D\u8981\u7F16\u9020\u7ED3\u679C\u3002`;
 var NON_EVIDENCE_TOOLS = /* @__PURE__ */ new Set(["todo_write"]);
 var TOOL_GROUPS = {
   vault: /* @__PURE__ */ new Set(["get_active_note", "get_selection", "list_files", "read_file", "search_notes", "open_note"]),
-  web: /* @__PURE__ */ new Set(["web_search", "web_fetch"]),
+  web: /* @__PURE__ */ new Set(["web_fetch"]),
   write: /* @__PURE__ */ new Set(["write_file", "append_to_active_note", "insert_at_cursor", "edit_file", "download_image"]),
   image: /* @__PURE__ */ new Set(["read_image", "download_image"]),
   bash: /* @__PURE__ */ new Set(["bash"])
@@ -2093,7 +2005,8 @@ var MAX_HISTORY_MESSAGES = 20;
 var SYSTEM_PROMPT = `\u4F60\u662F DeepSidian\uFF0C\u8FD0\u884C\u5728 Obsidian \u5185\u7684 DeepSeek \u52A9\u624B\u3002
 \u4F60\u8981\u7528\u4E2D\u6587\u4F18\u5148\u56DE\u7B54\uFF0C\u8BED\u6C14\u7B80\u6D01\u3001\u53EF\u9760\u3001\u50CF\u4E00\u4E2A\u719F\u6089\u7528\u6237\u77E5\u8BC6\u5E93\u7684\u534F\u4F5C\u4F19\u4F34\u3002
 \u4F60\u662F\u5DE5\u5177\u578B Agent\uFF0C\u4E0D\u662F\u5355\u7EAF\u804A\u5929\u6846\u3002\u9047\u5230\u5F53\u524D\u7B14\u8BB0\u3001\u9009\u4E2D\u5185\u5BB9\u3001\u5E93\u5185\u8D44\u6599\u3001\u6587\u4EF6\u8DEF\u5F84\u3001URL\u3001\u6574\u7406/\u6539\u5199/\u5199\u5165\u8BF7\u6C42\u65F6\uFF0C\u8981\u4E3B\u52A8\u8C03\u7528\u5408\u9002\u5DE5\u5177\u3002
-\u53EF\u7528\u80FD\u529B\u5305\u62EC\uFF1A\u8BFB\u53D6\u5F53\u524D\u7B14\u8BB0\u3001\u8BFB\u53D6\u9009\u533A\u3001\u5217\u6587\u4EF6\u3001\u641C\u7B14\u8BB0\u3001\u8BFB\u6587\u4EF6\u3001\u6253\u5F00\u7B14\u8BB0\u3001\u6293\u7F51\u9875\u3001\u8054\u7F51\u641C\u7D22\u3001\u770B\u56FE\u3001\u5199 TODO\u3001\u521B\u5EFA/\u7F16\u8F91/\u8FFD\u52A0/\u63D2\u5165\u7B14\u8BB0\u3001\u6D3E\u53D1\u5B50\u4EFB\u52A1\u3002
+\u53EF\u7528\u80FD\u529B\u5305\u62EC\uFF1A\u8BFB\u53D6\u5F53\u524D\u7B14\u8BB0\u3001\u8BFB\u53D6\u9009\u533A\u3001\u5217\u6587\u4EF6\u3001\u641C\u7B14\u8BB0\u3001\u8BFB\u6587\u4EF6\u3001\u6253\u5F00\u7B14\u8BB0\u3001\u6293\u7F51\u9875\uFF08\u9700\u7528\u6237\u7ED9\u51FA URL\uFF09\u3001\u770B\u56FE\u3001\u5199 TODO\u3001\u521B\u5EFA/\u7F16\u8F91/\u8FFD\u52A0/\u63D2\u5165\u7B14\u8BB0\u3001\u6D3E\u53D1\u5B50\u4EFB\u52A1\u3001\u6267\u884C\u547D\u4EE4\u3002
+\u4F60\u6CA1\u6709\u8054\u7F51\u641C\u7D22\u80FD\u529B\uFF1A\u5982\u679C\u7528\u6237\u8981"\u627E\u8D44\u6599/\u641C\u65B0\u95FB"\u4F46\u6CA1\u7ED9\u5177\u4F53\u94FE\u63A5\uFF0C\u8981\u8BF4\u660E\u4F60\u65E0\u6CD5\u8054\u7F51\u641C\u7D22\u3001\u53EF\u57FA\u4E8E\u5DF2\u6709\u77E5\u8BC6\u56DE\u7B54\uFF0C\u5E76\u8BF7\u5BF9\u65B9\u63D0\u4F9B URL \u8BA9\u4F60\u7528 web_fetch \u6293\u53D6\u3002
 \u5982\u679C\u7528\u6237\u7ED9\u56FE\u7247\u8DEF\u5F84\u6216\u56FE\u7247 URL\uFF0C\u8C03\u7528 read_image\uFF1B\u5982\u679C\u7528\u6237\u8981\u6C42\u4FDD\u5B58\u5916\u94FE\u56FE\u7247\uFF0C\u8C03\u7528 download_image\u3002
 \u53EA\u6709\u7528\u6237\u5F00\u542F\u5199\u5165\u6743\u9650\u65F6\uFF0C\u624D\u53EF\u4EE5\u521B\u5EFA\u3001\u7F16\u8F91\u3001\u8FFD\u52A0\u6216\u63D2\u5165\u7B14\u8BB0\uFF1B\u5199\u5165\u524D\u8981\u5C3D\u91CF\u8BF4\u660E\u5C06\u505A\u4EC0\u4E48\u3002
 \u5982\u679C\u63D0\u4F9B\u4E86\u5F53\u524D\u7B14\u8BB0\u4E0A\u4E0B\u6587\uFF0C\u4F18\u5148\u57FA\u4E8E\u4E0A\u4E0B\u6587\u56DE\u7B54\uFF1B\u5982\u679C\u4E0A\u4E0B\u6587\u4E0D\u8DB3\uFF0C\u8981\u4E3B\u52A8\u8C03\u7528\u641C\u7D22\u3001\u8BFB\u53D6\u6216\u7F51\u9875\u5DE5\u5177\u8865\u8DB3\u3002
@@ -2105,8 +2018,9 @@ var SYSTEM_PROMPT = `\u4F60\u662F DeepSidian\uFF0C\u8FD0\u884C\u5728 Obsidian \u
 
 \u771F\u5B9E\u6027\u4E0E\u6267\u884C\u8FB9\u754C\uFF1A
 - \u4E0D\u8981\u628A\u8BA1\u5212\u3001\u610F\u56FE\u6216\u4E0B\u4E00\u6B65\u8BF4\u6210\u5DF2\u7ECF\u5B8C\u6210\uFF1B\u53EA\u6709\u5B9E\u9645\u8C03\u7528\u5DE5\u5177\u5E76\u6536\u5230 ok:true\uFF0C\u624D\u53EF\u4EE5\u8BF4\u201C\u5DF2\u8BFB\u53D6 / \u5DF2\u641C\u7D22 / \u5DF2\u6293\u53D6 / \u5DF2\u5199\u5165 / \u5DF2\u5B8C\u6210\u201D\u3002
-- \u9700\u8981\u8054\u7F51\u641C\u7D22\u3001\u6293\u53D6\u7F51\u9875\u3001\u8BFB\u53D6\u5E93\u5185\u8D44\u6599\u3001\u67E5\u770B\u56FE\u7247\u3001\u5199\u5165\u6587\u4EF6\u6216\u6267\u884C\u547D\u4EE4\u65F6\uFF0C\u5FC5\u987B\u5148\u8C03\u7528\u5DE5\u5177\uFF1B\u4E0D\u80FD\u53EA\u51ED\u5E38\u8BC6\u6216\u7F16\u9020\u5185\u5BB9\u5192\u5145\u5DE5\u5177\u7ED3\u679C\u3002
-- \u5982\u679C web_search \u672A\u914D\u7F6E\u3001fetch-proxy \u672A\u542F\u52A8\u3001\u7F3A\u5C11 URL\u3001\u5199\u5165\u6743\u9650\u672A\u5F00\u542F\u6216\u547D\u4EE4\u6267\u884C\u4E0D\u53EF\u7528\uFF0C\u8981\u76F4\u63A5\u8BF4\u660E\u201C\u5C1A\u672A\u6267\u884C\u201D\u548C\u5177\u4F53\u539F\u56E0\uFF0C\u5E76\u7ED9\u51FA\u53EF\u884C\u4E0B\u4E00\u6B65\u3002
+- \u5F53\u7528\u6237\u7ED9\u4E86 URL\u3001\u660E\u786E\u6307\u5411\u5E93\u5185\u7B14\u8BB0/\u6587\u4EF6\u3001\u6216\u8981\u6C42\u5199\u5165/\u6267\u884C\u547D\u4EE4\u65F6\uFF0C\u5FC5\u987B\u5148\u8C03\u7528\u5BF9\u5E94\u5DE5\u5177\uFF0C\u4E0D\u80FD\u53EA\u51ED\u5E38\u8BC6\u6216\u7F16\u9020\u5185\u5BB9\u5192\u5145\u5DE5\u5177\u7ED3\u679C\u3002
+- \u4F46\u5982\u679C\u53EA\u662F\u4E00\u822C\u77E5\u8BC6\u6216\u89E3\u91CA\u7C7B\u95EE\u9898\uFF08\u6CA1\u6709\u5177\u4F53 URL\u3001\u4E0D\u6D89\u53CA\u5E93\u5185\u67D0\u4E2A\u5BF9\u8C61\uFF09\uFF0C\u5C31\u6B63\u5E38\u76F4\u63A5\u56DE\u7B54\uFF0C\u4E0D\u8981\u5F3A\u884C\u8C03\u7528\u5DE5\u5177\uFF0C\u4E5F\u4E0D\u8981\u56E0\u4E3A"\u6CA1\u8C03\u5DE5\u5177"\u800C\u62D2\u7EDD\u56DE\u7B54\u3002
+- \u5982\u679C fetch-proxy \u672A\u542F\u52A8\u3001\u7F3A\u5C11 URL\u3001\u5199\u5165\u6743\u9650\u672A\u5F00\u542F\u6216\u547D\u4EE4\u6267\u884C\u4E0D\u53EF\u7528\uFF0C\u8981\u76F4\u63A5\u8BF4\u660E\u201C\u5C1A\u672A\u6267\u884C\u201D\u548C\u5177\u4F53\u539F\u56E0\uFF0C\u5E76\u7ED9\u51FA\u53EF\u884C\u4E0B\u4E00\u6B65\u3002
 - \u5982\u679C\u7528\u6237\u8BE2\u95EE\u8FDB\u5EA6\uFF0C\u53EA\u540C\u6B65\u771F\u5B9E\u72B6\u6001\uFF1A\u5DF2\u8C03\u7528\u54EA\u4E9B\u5DE5\u5177\u3001\u54EA\u4E9B\u6210\u529F/\u5931\u8D25\u3001\u8FD8\u5DEE\u4EC0\u4E48\uFF1B\u4E0D\u8981\u7528\u201C\u9A6C\u4E0A\u201D\u201C\u5FEB\u597D\u4E86\u201D\u63A9\u76D6\u672A\u6267\u884C\u3002`;
 var SUBAGENT_PROMPTS = {
   explore: `\u4F60\u662F DeepSidian \u7684\u53EA\u8BFB\u8C03\u7814\u5B50 Agent\u3002\u4F60\u53EA\u80FD\u8BFB\u53D6\u3001\u641C\u7D22\u3001\u5217\u4E3E\u5E93\u5185\u7B14\u8BB0\u5E76\u6293\u53D6\u7F51\u9875\uFF0C\u4E0D\u80FD\u5199\u5165\u3002
@@ -2384,8 +2298,11 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     this.writeToggleEl.checked = this.plugin.settings.enableVaultWrites;
     writeLabelEl.createSpan({ text: "\u5199\u5165" });
     this.writeToggleEl.addEventListener("change", async () => {
-      this.plugin.settings.enableVaultWrites = this.writeToggleEl.checked;
+      const on = this.writeToggleEl.checked;
+      this.plugin.settings.enableVaultWrites = on;
+      this.setAllWritePermissions(on);
       await this.plugin.saveSettings();
+      this.renderInlineSettings();
     });
     const bashLabelEl = composerActionsEl.createEl("label", {
       cls: "deepsidian-write-toggle",
@@ -2566,20 +2483,6 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       this.plugin.settings.baseUrl = baseUrlInput.value.trim() || "https://api.deepseek.com";
       await this.plugin.saveSettings();
     });
-    const tavilyRow = this.settingsPanelEl.createDiv({ cls: "deepsidian-setting-row" });
-    tavilyRow.createEl("label", { text: "Tavily Key" });
-    const tavilyInput = tavilyRow.createEl("input", {
-      attr: {
-        type: "password",
-        placeholder: "tvly-...",
-        autocomplete: "off"
-      }
-    });
-    tavilyInput.value = this.plugin.settings.tavilyApiKey;
-    tavilyInput.addEventListener("change", async () => {
-      this.plugin.settings.tavilyApiKey = tavilyInput.value.trim();
-      await this.plugin.saveSettings();
-    });
     const modelRow = this.settingsPanelEl.createDiv({ cls: "deepsidian-setting-row" });
     modelRow.createEl("label", { text: "\u6A21\u578B" });
     const modelSelect = modelRow.createEl("select");
@@ -2607,10 +2510,16 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     const writeLabel = toggleRow.createEl("label");
     const writeToggle = writeLabel.createEl("input", { attr: { type: "checkbox" } });
     writeToggle.checked = this.plugin.settings.enableVaultWrites;
-    writeLabel.createSpan({ text: "\u5141\u8BB8\u5199\u5165\u7B14\u8BB0" });
+    writeLabel.createSpan({ text: "\u5141\u8BB8\u5199\u5165\u7B14\u8BB0\uFF08\u603B\u5F00\u5173\uFF09" });
     writeToggle.addEventListener("change", async () => {
-      this.plugin.settings.enableVaultWrites = writeToggle.checked;
+      const on = writeToggle.checked;
+      this.plugin.settings.enableVaultWrites = on;
+      this.setAllWritePermissions(on);
+      if (this.writeToggleEl) {
+        this.writeToggleEl.checked = on;
+      }
       await this.plugin.saveSettings();
+      this.renderInlineSettings();
     });
     const permissionRow = this.settingsPanelEl.createDiv({ cls: "deepsidian-setting-row deepsidian-setting-row-inline deepsidian-write-permissions" });
     this.renderInlineWritePermission(permissionRow, "createNotes", "\u65B0\u5EFA");
@@ -2626,6 +2535,12 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       await this.plugin.testConnection();
       testButton.disabled = false;
       testButton.setText("\u6D4B\u8BD5\u8FDE\u63A5");
+    });
+  }
+  setAllWritePermissions(value) {
+    const perms = this.plugin.settings.writePermissions;
+    Object.keys(perms).forEach((key) => {
+      perms[key] = value;
     });
   }
   renderInlineWritePermission(containerEl, key, label) {
@@ -2690,14 +2605,16 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
   }
   async runAgent(userText, signal, pendingEl) {
     const config = THINKING_CONFIG[this.plugin.settings.thinkingLevel];
+    const requiredGroups = this.inferRequiredToolGroups(userText);
     const loop = new AgentLoop({
       client: this.plugin.createClient(),
       tools: VAULT_TOOL_DEFINITIONS,
       toolContext: this.buildToolContext(signal, true),
       maxSteps: this.plugin.settings.maxToolSteps,
       thinking: config.thinking,
-      requireToolUse: this.shouldRequireToolUse(userText),
-      requiredToolGroups: this.inferRequiredToolGroups(userText),
+      // 只有识别出"明确需要某类工具"时才强制 + 纠偏；普通知识/解释类问题正常直接回答。
+      requireToolUse: requiredGroups.length > 0,
+      requiredToolGroups: requiredGroups,
       reflectionRounds: config.reflectionRounds,
       signal,
       callbacks: {
@@ -2709,26 +2626,27 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     });
     return loop.run(await this.buildMessages(userText));
   }
-  shouldRequireToolUse(userText) {
-    return /\bhttps?:\/\/|搜索|查找|全库|文件|笔记|当前笔记|选中|选区|打开|创建|写入|编辑|修改|追加|插入|保存|网页|链接|URL|图片|截图|图像|看图|下载|读取|导入|抓取|抓一篇|抓|爬取|联网|新闻|BBC|整理到|放到|开始整理|继续整理|开始写入|继续执行/i.test(userText);
-  }
+  /**
+   * 只在“明确需要某类工具”时返回对应组，用于强制 + 纠偏。
+   * 故意保守：宁可少判（模型仍带着全部工具、靠系统提示自行决定），也不要把普通问答误判成必须调工具而拒答。
+   */
   inferRequiredToolGroups(userText) {
     const groups = /* @__PURE__ */ new Set();
-    const asksImage = /图片|截图|图像|看图|读图|识图|OCR|下载.*图/i.test(userText);
-    const asksWeb = /网页|抓取|抓一篇|爬取|联网|新闻|BBC|web|website|article/i.test(userText) || !asksImage && /\bhttps?:\/\/|链接|URL/i.test(userText);
-    if (asksWeb) {
+    const hasUrl = /\bhttps?:\/\/\S+/i.test(userText);
+    const hasImagePath = /\S+\.(png|jpe?g|webp|gif|bmp|svg|avif)\b/i.test(userText);
+    if (hasUrl && !hasImagePath) {
       groups.add("web");
     }
-    if (/全库|文件|笔记|当前笔记|选中|选区|打开|读取/i.test(userText) || !asksWeb && /搜索|查找/i.test(userText)) {
-      groups.add("vault");
-    }
-    if (/创建|写入|编辑|修改|追加|插入|保存|整理到|放到|改写|替换|开始写入/i.test(userText)) {
-      groups.add("write");
-    }
-    if (asksImage) {
+    if (hasImagePath || /这张图|这幅图|这个截图|截图里|图中文字|识别.*图|看这张|读这张/i.test(userText)) {
       groups.add("image");
     }
-    if (/bash|shell|终端|命令行|执行命令|运行命令/i.test(userText)) {
+    if (/当前笔记|这篇笔记|这个笔记|本笔记|这条笔记|当前文件|这个文件|我的笔记|笔记里|库里|全库|整个库|选中|选区|搜笔记|搜索笔记/i.test(userText)) {
+      groups.add("vault");
+    }
+    if (/创建|新建|写入|保存到|存到|存为|另存|追加到|追加进|插入到|替换为|替换成|整理到|归档到|写到/i.test(userText)) {
+      groups.add("write");
+    }
+    if (/\bbash\b|shell|终端|命令行|执行命令|运行命令|跑(一下|个)?命令/i.test(userText)) {
       groups.add("bash");
     }
     return [...groups];

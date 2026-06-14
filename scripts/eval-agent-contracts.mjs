@@ -9,12 +9,12 @@ const files = {
 
 const checks = [
   {
-    name: "BBC/news requests require web evidence",
+    name: "URL fetch requests require web evidence (web group = web_fetch only, no web_search)",
     pass:
-      /BBC/.test(files.view) &&
-      /新闻/.test(files.view) &&
       /groups\.add\("web"\)/.test(files.view) &&
-      /web:\s*new Set\(\["web_search", "web_fetch"\]\)/.test(files.agentLoop)
+      /hasUrl/.test(files.view) &&
+      /web:\s*new Set\(\["web_fetch"\]\)/.test(files.agentLoop) &&
+      !/web_search/.test(files.vaultTools)
   },
   {
     name: "Write tools require confirmation before mutation",

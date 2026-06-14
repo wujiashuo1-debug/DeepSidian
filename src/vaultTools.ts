@@ -271,28 +271,6 @@ export const VAULT_TOOL_DEFINITIONS: DeepSeekToolDefinition[] = [
   {
     type: "function",
     function: {
-      name: "web_search",
-      description: "联网搜索网页候选结果。需要用户在设置中配置 Tavily API Key。适合用户没有给具体 URL、只给主题或媒体来源让你找资料时使用；通常先 web_search，再对最相关 URL 调 web_fetch。",
-      parameters: {
-        type: "object",
-        required: ["query"],
-        properties: {
-          query: {
-            type: "string",
-            description: "搜索关键词，例如 BBC climate change latest。"
-          },
-          limit: {
-            type: "number",
-            description: "最多返回多少条结果，默认 5，最大 10。"
-          }
-        },
-        additionalProperties: false
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
       name: "read_image",
       description: "读取库内图片或图片 URL，调用视觉模型识别图片。可用 mode 选择：ocr 只逐字提取文字、describe 只做视觉描述、auto 两者都做（默认）。适合看截图、图表、照片、外链图片或提取图中文字时使用。",
       parameters: {
@@ -435,7 +413,6 @@ const READ_ONLY_TOOL_NAMES = [
   "search_notes",
   "open_note",
   "web_fetch",
-  "web_search",
   "read_image"
 ];
 
@@ -484,8 +461,6 @@ export async function executeVaultTool(
         return await editFile(context, args);
       case "web_fetch":
         return await webFetch(args);
-      case "web_search":
-        return await webSearch(context, args);
       case "read_image":
         return await readImage(context, args);
       case "download_image":
@@ -980,70 +955,6 @@ async function webFetch(args: Record<string, unknown>): Promise<ToolResult> {
   return {
     ok: true,
     content: `[source: ${source}]\n${text}${truncatedNote}`
-  };
-}
-
-async function webSearch(
-  { settings }: ToolContext,
-  args: Record<string, unknown>
-): Promise<ToolResult> {
-  const apiKey = settings.tavilyApiKey.trim();
-  const query = typeof args.query === "string" ? args.query.trim() : "";
-
-  if (!apiKey) {
-    return {
-      ok: false,
-      content: "web_search 未配置。请在 DeepSidian 设置里填写 Tavily API Key。"
-    };
-  }
-
-  if (!query) {
-    return {
-      ok: false,
-      content: "query 不能为空。"
-    };
-  }
-
-  const limit = clampNumber(args.limit, 5, 1, 10);
-  const response = await requestUrl({
-    url: "https://api.tavily.com/search",
-    method: "POST",
-    throw: false,
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      api_key: apiKey,
-      query,
-      max_results: limit,
-      search_depth: "basic"
-    })
-  });
-
-  if (response.status < 200 || response.status >= 300) {
-    return {
-      ok: false,
-      content: `搜索失败：HTTP ${response.status} ${response.text ?? ""}`.trim()
-    };
-  }
-
-  const payload = parseJson(response.json ?? response.text);
-  const results = Array.isArray(payload.results) ? payload.results : [];
-  const lines = results.slice(0, limit).map((item: unknown, index: number) => {
-    if (!isRecord(item)) {
-      return `${index + 1}. ${String(item)}`;
-    }
-
-    const title = typeof item.title === "string" ? item.title : "Untitled";
-    const url = typeof item.url === "string" ? item.url : "";
-    const content = typeof item.content === "string" ? item.content : "";
-
-    return `${index + 1}. ${title}\n${url}\n${content.slice(0, 300)}`;
-  });
-
-  return {
-    ok: true,
-    content: lines.length ? lines.join("\n\n") : "没有搜索结果。"
   };
 }
 

@@ -32,7 +32,6 @@ DeepSidian is an Obsidian plugin prototype that connects a sidebar assistant to 
   - `read_file`
   - `search_notes`
   - `open_note`
-  - `web_search` with Tavily API Key
   - `web_fetch` for safe HTTP/HTTPS page retrieval, redirects, truncation, HTML-to-text extraction, and 5-minute URL cache
   - `dispatch_agent` to run an isolated sub-task agent (`explore` / `summarize` / `general`); sub-agents cannot dispatch further (depth ≤ 1)
   - `bash` to run a shell command in the vault root — **desktop only**, off by default, blocks high-risk commands (rm -rf, sudo, mkfs, dd, fork bombs, `curl | sh`, …), and asks for per-command confirmation unless "auto-approve" is on. Not available to sub-agents.
@@ -92,5 +91,5 @@ GitHub Actions can also package the Obsidian plugin (`main.js`, `manifest.json`,
 ## Roadmap / not yet implemented
 
 - `read_image` supports `mode = ocr | describe | auto` via the DeepSeek vision (VLM) track. The **offline** OCR track from the design doc (`tesseract.js`, no API cost, works without network) is still pending — it adds a heavy WASM dependency and needs in-Obsidian bundle testing.
-- `web_search` is wired to Tavily only; the pluggable provider abstraction (Serper / Bing / SearXNG) is not built yet.
-- Nested sub-task cards, per-action write confirmation, and context compression are still open.
+- There is no web search: the agent can fetch a URL you provide (`web_fetch`) but cannot discover URLs on its own. Ask with a concrete link, or rely on vault search (`search_notes`).
+- Nested sub-task cards and context compression are still open.

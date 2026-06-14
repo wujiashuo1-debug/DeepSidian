@@ -61,21 +61,6 @@ export class DeepSidianSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("Tavily API Key")
-      .setDesc("可选。填写后启用 web_search 联网搜索工具。")
-      .addText((text) => {
-        text
-          .setPlaceholder("tvly-...")
-          .setValue(this.plugin.settings.tavilyApiKey)
-          .onChange(async (value) => {
-            this.plugin.settings.tavilyApiKey = value.trim();
-            await this.plugin.saveSettings();
-          });
-        text.inputEl.type = "password";
-        text.inputEl.autocomplete = "off";
-      });
-
-    new Setting(containerEl)
       .setName("Temperature")
       .setDesc("越低越稳定，越高越发散。")
       .addSlider((slider) => {

@@ -44,7 +44,6 @@ export interface DeepSidianSettings {
   apiKey: string;
   baseUrl: string;
   model: string;
-  tavilyApiKey: string;
   temperature: number;
   includeActiveNote: boolean;
   maxContextCharacters: number;
@@ -150,7 +149,6 @@ export const DEFAULT_SETTINGS: DeepSidianSettings = {
   apiKey: "",
   baseUrl: "https://api.deepseek.com",
   model: "deepseek-v4-flash",
-  tavilyApiKey: "",
   temperature: 0.2,
   includeActiveNote: true,
   maxContextCharacters: 12000,
