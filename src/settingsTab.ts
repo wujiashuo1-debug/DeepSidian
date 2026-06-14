@@ -135,7 +135,7 @@ export class DeepSidianSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("允许 AI 写入笔记")
-      .setDesc("开启后 write_file/edit_file 工具可以创建或修改库内笔记。")
+      .setDesc("写入总开关。开启后仍需分别允许具体写入类型。")
       .addToggle((toggle) => {
         toggle
           .setValue(this.plugin.settings.enableVaultWrites)
@@ -144,6 +144,12 @@ export class DeepSidianSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           });
       });
+
+    this.addWritePermissionToggle(containerEl, "createNotes", "允许创建新笔记");
+    this.addWritePermissionToggle(containerEl, "editNotes", "允许编辑已有笔记");
+    this.addWritePermissionToggle(containerEl, "appendActiveNote", "允许追加到当前笔记");
+    this.addWritePermissionToggle(containerEl, "insertAtCursor", "允许修改当前选区/光标");
+    this.addWritePermissionToggle(containerEl, "downloadAttachments", "允许下载附件");
 
     new Setting(containerEl)
       .setName("思考深度")
@@ -204,6 +210,24 @@ export class DeepSidianSettingTab extends PluginSettingTab {
               button.setDisabled(false);
               button.setButtonText("测试连接");
             }
+          });
+      });
+  }
+
+  private addWritePermissionToggle(
+    containerEl: HTMLElement,
+    key: keyof typeof this.plugin.settings.writePermissions,
+    label: string
+  ) {
+    new Setting(containerEl)
+      .setName(label)
+      .setDesc("仅在“允许 AI 写入笔记”总开关开启时生效。")
+      .addToggle((toggle) => {
+        toggle
+          .setValue(this.plugin.settings.writePermissions[key])
+          .onChange(async (value) => {
+            this.plugin.settings.writePermissions[key] = value;
+            await this.plugin.saveSettings();
           });
       });
   }

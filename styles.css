@@ -265,6 +265,24 @@
   background: var(--background-primary);
 }
 
+.deepsidian-tool-timeline {
+  margin: 8px 0 12px;
+  padding-left: 10px;
+  border-left: 2px solid var(--deepsidian-border);
+}
+
+.deepsidian-tool-timeline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 7px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .deepsidian-tool-card.is-error {
   border-color: rgba(224, 80, 80, 0.36);
   background: rgba(224, 80, 80, 0.05);
@@ -308,6 +326,67 @@
   font-size: 11px;
   line-height: 1.45;
   white-space: pre-wrap;
+}
+
+.deepsidian-tool-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 7px 9px;
+  border-top: 1px solid var(--deepsidian-border);
+  background: var(--background-primary);
+}
+
+.deepsidian-tool-action {
+  padding: 3px 7px;
+  border: 1px solid var(--deepsidian-border);
+  border-radius: 5px;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.deepsidian-diff-preview {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--deepsidian-border);
+  border-radius: 7px;
+  background: var(--background-secondary);
+}
+
+.deepsidian-diff-header {
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--deepsidian-border);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.deepsidian-diff-body {
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.deepsidian-diff-line {
+  min-height: 18px;
+  padding: 1px 9px;
+  white-space: pre-wrap;
+}
+
+.deepsidian-diff-line.is-added {
+  color: var(--text-success);
+  background: rgba(80, 180, 120, 0.11);
+}
+
+.deepsidian-diff-line.is-removed {
+  color: var(--text-error);
+  background: rgba(224, 80, 80, 0.1);
+}
+
+.deepsidian-diff-line.is-context {
+  color: var(--text-muted);
 }
 
 .deepsidian-composer {

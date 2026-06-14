@@ -50,9 +50,18 @@ export interface DeepSidianSettings {
   maxContextCharacters: number;
   maxToolSteps: number;
   enableVaultWrites: boolean;
+  writePermissions: DeepSidianWritePermissions;
   thinkingLevel: ThinkingLevel;
   enableBash: boolean;
   bashAutoApprove: boolean;
+}
+
+export interface DeepSidianWritePermissions {
+  createNotes: boolean;
+  editNotes: boolean;
+  appendActiveNote: boolean;
+  insertAtCursor: boolean;
+  downloadAttachments: boolean;
 }
 
 export interface DeepSeekToolCall {
@@ -69,6 +78,8 @@ export interface DeepSeekMessage {
   content: string | null;
   tool_call_id?: string;
   tool_calls?: DeepSeekToolCall[];
+  /** DeepSidian 会话内的用户回合 ID；不会发送给模型，只用于 UI 与工具轨迹关联。 */
+  turnId?: string;
 }
 
 export interface DeepSeekToolDefinition {
@@ -97,6 +108,42 @@ export interface DeepSidianSession {
   createdAt: number;
   updatedAt: number;
   messages: DeepSeekMessage[];
+  toolRuns?: DeepSidianToolRun[];
+  undoSnapshots?: DeepSidianUndoSnapshot[];
+  memory?: DeepSidianSessionMemory;
+}
+
+export interface DeepSidianToolRun {
+  id: string;
+  turnId: string;
+  toolCallId?: string;
+  name: string;
+  args: Record<string, unknown>;
+  ok: boolean | null;
+  content: string;
+  startedAt: number;
+  finishedAt?: number;
+}
+
+export interface DeepSidianUndoSnapshot {
+  id: string;
+  turnId: string;
+  action: string;
+  target: string;
+  path: string;
+  beforeContent: string | null;
+  afterContent: string;
+  createdAt: number;
+  undoneAt?: number;
+}
+
+export interface DeepSidianSessionMemory {
+  updatedAt: number;
+  currentGoal?: string;
+  completed: string[];
+  blockers: string[];
+  files: string[];
+  notes: string[];
 }
 
 export const DEFAULT_SETTINGS: DeepSidianSettings = {
@@ -109,6 +156,13 @@ export const DEFAULT_SETTINGS: DeepSidianSettings = {
   maxContextCharacters: 12000,
   maxToolSteps: 8,
   enableVaultWrites: false,
+  writePermissions: {
+    createNotes: false,
+    editNotes: false,
+    appendActiveNote: false,
+    insertAtCursor: false,
+    downloadAttachments: false
+  },
   thinkingLevel: "low",
   enableBash: false,
   bashAutoApprove: false

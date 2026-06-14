@@ -1,8 +1,10 @@
-import { App, ItemView, MarkdownRenderer, MarkdownView, Modal, Notice, setIcon, WorkspaceLeaf } from "obsidian";
+import { App, ItemView, MarkdownRenderer, MarkdownView, Modal, Notice, setIcon, TFile, WorkspaceLeaf } from "obsidian";
 import type DeepSidianPlugin from "../main";
 import {
   DeepSeekMessage,
   DeepSeekToolCall,
+  DeepSidianToolRun,
+  DeepSidianUndoSnapshot,
   DeepSidianSession,
   MODEL_OPTIONS,
   MODEL_PRICING,
@@ -15,7 +17,7 @@ import {
   VIEW_TYPE_DEEPSIDIAN
 } from "./types";
 import { AgentLoop, RequiredToolGroup } from "./agentLoop";
-import { AgentType, getToolsForAgentType, ToolContext, VAULT_TOOL_DEFINITIONS } from "./vaultTools";
+import { AgentType, executeVaultTool, getToolsForAgentType, ToolContext, UndoSnapshotInput, VAULT_TOOL_DEFINITIONS, WriteConfirmationRequest } from "./vaultTools";
 
 const MAX_HISTORY_MESSAGES = 20;
 
@@ -53,6 +55,7 @@ interface ToolCardHandle {
   cardEl: HTMLDetailsElement;
   statusEl: HTMLElement;
   resultEl: HTMLElement;
+  runId?: string;
 }
 
 /** bash 命令执行前的确认弹窗，关闭=拒绝。 */
@@ -100,8 +103,142 @@ class CommandConfirmModal extends Modal {
   }
 }
 
+/** 写入 Obsidian 库或当前编辑器前的确认弹窗。 */
+class WriteConfirmModal extends Modal {
+  private resolved = false;
+
+  constructor(
+    app: App,
+    private request: WriteConfirmationRequest,
+    private onChoice: (approved: boolean) => void
+  ) {
+    super(app);
+  }
+
+  onOpen() {
+    this.titleEl.setText("确认写入？");
+
+    this.contentEl.createEl("p", {
+      cls: "deepsidian-confirm-desc",
+      text: `${this.request.action}：${this.request.target}`
+    });
+    renderDiffPreview(this.contentEl, this.request);
+
+    const actionsEl = this.contentEl.createDiv({ cls: "deepsidian-confirm-actions" });
+    const denyButton = actionsEl.createEl("button", { text: "取消" });
+    const allowButton = actionsEl.createEl("button", { cls: "mod-cta", text: "确认写入" });
+
+    denyButton.addEventListener("click", () => this.choose(false));
+    allowButton.addEventListener("click", () => this.choose(true));
+  }
+
+  onClose() {
+    this.choose(false);
+  }
+
+  private choose(approved: boolean) {
+    if (this.resolved) {
+      return;
+    }
+
+    this.resolved = true;
+    this.onChoice(approved);
+    this.close();
+  }
+}
+
+function renderDiffPreview(containerEl: HTMLElement, request: WriteConfirmationRequest) {
+  if (typeof request.before !== "undefined" && typeof request.after === "string") {
+    const diffEl = containerEl.createDiv({ cls: "deepsidian-diff-preview" });
+    const headerEl = diffEl.createDiv({ cls: "deepsidian-diff-header", text: "Before / After diff" });
+    const bodyEl = diffEl.createDiv({ cls: "deepsidian-diff-body" });
+
+    for (const line of buildLineDiff(request.before ?? "", request.after)) {
+      const cls = line.type === "added"
+        ? "deepsidian-diff-line is-added"
+        : line.type === "removed"
+          ? "deepsidian-diff-line is-removed"
+          : "deepsidian-diff-line is-context";
+      const prefix = line.type === "added" ? "+ " : line.type === "removed" ? "- " : "  ";
+      bodyEl.createDiv({ cls, text: `${prefix}${line.text}` });
+    }
+
+    if (!bodyEl.children.length) {
+      bodyEl.createDiv({ cls: "deepsidian-diff-line is-context", text: "  （无变化）" });
+    }
+
+    headerEl.setAttribute("title", "红色为删除，绿色为新增。");
+    return;
+  }
+
+  containerEl.createEl("pre", { cls: "deepsidian-confirm-cmd" }).setText(request.preview);
+}
+
+type DiffLine = { type: "context" | "added" | "removed"; text: string };
+
+function buildLineDiff(before: string, after: string): DiffLine[] {
+  const maxInputLines = 360;
+  const beforeAll = before.split("\n");
+  const afterAll = after.split("\n");
+  const beforeLines = beforeAll.slice(0, maxInputLines);
+  const afterLines = afterAll.slice(0, maxInputLines);
+  const maxLines = 240;
+  const matrix: number[][] = Array.from({ length: beforeLines.length + 1 }, () =>
+    Array(afterLines.length + 1).fill(0)
+  );
+
+  for (let i = beforeLines.length - 1; i >= 0; i -= 1) {
+    for (let j = afterLines.length - 1; j >= 0; j -= 1) {
+      matrix[i][j] = beforeLines[i] === afterLines[j]
+        ? matrix[i + 1][j + 1] + 1
+        : Math.max(matrix[i + 1][j], matrix[i][j + 1]);
+    }
+  }
+
+  const result: DiffLine[] = [];
+  let i = 0;
+  let j = 0;
+
+  while (i < beforeLines.length && j < afterLines.length && result.length < maxLines) {
+    if (beforeLines[i] === afterLines[j]) {
+      result.push({ type: "context", text: beforeLines[i] });
+      i += 1;
+      j += 1;
+    } else if (matrix[i + 1][j] >= matrix[i][j + 1]) {
+      result.push({ type: "removed", text: beforeLines[i] });
+      i += 1;
+    } else {
+      result.push({ type: "added", text: afterLines[j] });
+      j += 1;
+    }
+  }
+
+  while (i < beforeLines.length && result.length < maxLines) {
+    result.push({ type: "removed", text: beforeLines[i] });
+    i += 1;
+  }
+
+  while (j < afterLines.length && result.length < maxLines) {
+    result.push({ type: "added", text: afterLines[j] });
+    j += 1;
+  }
+
+  if (i < beforeLines.length || j < afterLines.length) {
+    result.push({ type: "context", text: "… diff 过长，已截断。" });
+  }
+
+  if (beforeAll.length > maxInputLines || afterAll.length > maxInputLines) {
+    result.push({ type: "context", text: "… 文件过长，仅预览前 360 行。" });
+  }
+
+  return result;
+}
+
 export class DeepSidianView extends ItemView {
   private conversation: DeepSeekMessage[] = [];
+  private toolRuns: DeepSidianToolRun[] = [];
+  private undoSnapshots: DeepSidianUndoSnapshot[] = [];
+  private timelineEls = new Map<string, HTMLElement>();
   private currentSession!: DeepSidianSession;
   private sessions: DeepSidianSession[] = [];
   private transcriptEl!: HTMLElement;
@@ -116,6 +253,7 @@ export class DeepSidianView extends ItemView {
   private settingsOpen = false;
   private isBusy = false;
   private currentAbort: AbortController | null = null;
+  private activeTurnId: string | null = null;
   private sessionPromptTokens = 0;
   private sessionCompletionTokens = 0;
   private sessionCostUsd = 0;
@@ -140,6 +278,8 @@ export class DeepSidianView extends ItemView {
     this.sessions = await this.plugin.listSessions();
     this.currentSession = this.sessions[0] ?? this.plugin.createSession();
     this.conversation = [...this.currentSession.messages];
+    this.toolRuns = [...(this.currentSession.toolRuns ?? [])];
+    this.undoSnapshots = [...(this.currentSession.undoSnapshots ?? [])];
     this.render();
   }
 
@@ -361,6 +501,8 @@ export class DeepSidianView extends ItemView {
     await this.persistCurrentSession();
     this.currentSession = this.plugin.createSession();
     this.conversation = [];
+    this.toolRuns = [];
+    this.undoSnapshots = [];
     this.sessions = [this.currentSession, ...this.sessions.filter((session) => session.id !== this.currentSession.id)];
     this.clearTodoPanel();
     this.resetSessionUsage();
@@ -380,6 +522,8 @@ export class DeepSidianView extends ItemView {
 
     this.currentSession = session;
     this.conversation = [...session.messages];
+    this.toolRuns = [...(session.toolRuns ?? [])];
+    this.undoSnapshots = [...(session.undoSnapshots ?? [])];
     this.sessions = await this.plugin.listSessions();
     this.clearTodoPanel();
     this.resetSessionUsage();
@@ -398,6 +542,7 @@ export class DeepSidianView extends ItemView {
 
   private renderConversation() {
     this.transcriptEl.empty();
+    this.timelineEls.clear();
 
     if (!this.conversation.length) {
       this.renderEmptyState();
@@ -410,6 +555,7 @@ export class DeepSidianView extends ItemView {
       } else if (message.role === "assistant") {
         const bubbleEl = this.transcriptEl.createDiv({ cls: "deepsidian-bubble deepsidian-bubble-assistant" });
         void this.renderAssistantInto(bubbleEl, message.content ?? "");
+        this.renderToolHistory(message.turnId);
         this.transcriptEl.scrollTo({ top: this.transcriptEl.scrollHeight });
       }
     }
@@ -523,6 +669,13 @@ export class DeepSidianView extends ItemView {
       await this.plugin.saveSettings();
     });
 
+    const permissionRow = this.settingsPanelEl.createDiv({ cls: "deepsidian-setting-row deepsidian-setting-row-inline deepsidian-write-permissions" });
+    this.renderInlineWritePermission(permissionRow, "createNotes", "新建");
+    this.renderInlineWritePermission(permissionRow, "editNotes", "编辑");
+    this.renderInlineWritePermission(permissionRow, "appendActiveNote", "追加");
+    this.renderInlineWritePermission(permissionRow, "insertAtCursor", "选区");
+    this.renderInlineWritePermission(permissionRow, "downloadAttachments", "附件");
+
     const testButton = this.settingsPanelEl.createEl("button", { cls: "deepsidian-secondary-button" });
     testButton.setText("测试连接");
     testButton.addEventListener("click", async () => {
@@ -531,6 +684,21 @@ export class DeepSidianView extends ItemView {
       await this.plugin.testConnection();
       testButton.disabled = false;
       testButton.setText("测试连接");
+    });
+  }
+
+  private renderInlineWritePermission(
+    containerEl: HTMLElement,
+    key: keyof typeof this.plugin.settings.writePermissions,
+    label: string
+  ) {
+    const itemEl = containerEl.createEl("label");
+    const checkbox = itemEl.createEl("input", { attr: { type: "checkbox" } });
+    checkbox.checked = this.plugin.settings.writePermissions[key];
+    itemEl.createSpan({ text: label });
+    checkbox.addEventListener("change", async () => {
+      this.plugin.settings.writePermissions[key] = checkbox.checked;
+      await this.plugin.saveSettings();
     });
   }
 
@@ -554,10 +722,13 @@ export class DeepSidianView extends ItemView {
     this.setBusy(true);
     if (this.emptyStateEl?.isConnected) {
       this.transcriptEl.empty();
+      this.timelineEls.clear();
     }
     this.appendBubble("user", userText);
 
     const pendingEl = this.appendBubble("assistant", "正在思考...");
+    const turnId = this.createTurnId();
+    this.activeTurnId = turnId;
 
     try {
       // 始终带工具走 Agent 循环；不再用关键词猜测，避免模型在无工具时“用文字编造”工具调用。
@@ -570,8 +741,9 @@ export class DeepSidianView extends ItemView {
         return;
       }
 
-      this.conversation.push({ role: "user", content: userText });
-      this.conversation.push({ role: "assistant", content: result.content });
+      this.conversation.push({ role: "user", content: userText, turnId });
+      this.conversation.push({ role: "assistant", content: result.content, turnId });
+      this.updateSessionMemory(userText, result.content, turnId);
       await this.persistCurrentSession(userText);
 
       await this.renderAssistantInto(pendingEl, result.content);
@@ -585,6 +757,7 @@ export class DeepSidianView extends ItemView {
       pendingEl.setText(`出错了：${message}`);
       new Notice(`DeepSidian 请求失败：${message}`, 8000);
     } finally {
+      this.activeTurnId = null;
       this.currentAbort = null;
       this.setBusy(false);
     }
@@ -673,6 +846,8 @@ export class DeepSidianView extends ItemView {
       describeImage: (dataUrl: string, prompt?: string) =>
         this.plugin.createClient().describeImage(dataUrl, prompt),
       summarizeText: (text: string, prompt: string) => this.summarizeText(text, prompt),
+      confirmWrite: (request: WriteConfirmationRequest) => this.confirmWrite(request),
+      recordUndo: (snapshot: UndoSnapshotInput) => this.recordUndo(snapshot),
       confirmCommand: (command: string, description?: string) => this.confirmCommand(command, description)
     };
 
@@ -711,6 +886,15 @@ export class DeepSidianView extends ItemView {
       });
     }
 
+    const memoryContext = this.formatSessionMemory();
+
+    if (memoryContext) {
+      messages.push({
+        role: "system",
+        content: memoryContext
+      });
+    }
+
     // 只回注最近若干轮历史，控制上下文体积与成本（conversation 里只有 user/assistant，裁剪安全）。
     const recentHistory = this.conversation.slice(-MAX_HISTORY_MESSAGES);
     messages.push(...recentHistory);
@@ -733,7 +917,21 @@ export class DeepSidianView extends ItemView {
   }
 
   private startToolCard(toolCall: DeepSeekToolCall, args: Record<string, unknown>): ToolCardHandle {
-    const cardEl = this.transcriptEl.createEl("details", {
+    const runId = this.createTurnId();
+    const run: DeepSidianToolRun = {
+      id: runId,
+      turnId: this.activeTurnId ?? "unknown",
+      toolCallId: toolCall.id,
+      name: toolCall.function.name,
+      args: this.cloneToolArgs(args),
+      ok: null,
+      content: "",
+      startedAt: Date.now()
+    };
+    this.toolRuns.push(run);
+
+    const timelineEl = this.ensureToolTimeline(run.turnId);
+    const cardEl = timelineEl.createEl("details", {
       cls: "deepsidian-tool-card is-running"
     });
     cardEl.open = true;
@@ -748,7 +946,7 @@ export class DeepSidianView extends ItemView {
     resultEl.setText("...");
 
     this.transcriptEl.scrollTo({ top: this.transcriptEl.scrollHeight });
-    return { cardEl, statusEl, resultEl };
+    return { cardEl, statusEl, resultEl, runId };
   }
 
   private finishToolCard(
@@ -761,7 +959,136 @@ export class DeepSidianView extends ItemView {
     elements.statusEl.setText(ok ? "完成" : "失败");
     elements.resultEl.setText(content);
     elements.cardEl.open = false;
+
+    if (elements.runId) {
+      const run = this.toolRuns.find((item) => item.id === elements.runId);
+
+      if (run) {
+        run.ok = ok;
+        run.content = this.clipToolContent(content);
+        run.finishedAt = Date.now();
+        this.renderToolActionButtons(elements.cardEl, run);
+      }
+    }
+
     this.transcriptEl.scrollTo({ top: this.transcriptEl.scrollHeight });
+  }
+
+  private renderToolHistory(turnId: string | undefined) {
+    if (!turnId) {
+      return;
+    }
+
+    const runs = this.toolRuns.filter((run) => run.turnId === turnId);
+
+    if (!runs.length && !this.hasUndoableSnapshots(turnId)) {
+      return;
+    }
+
+    const timelineEl = this.ensureToolTimeline(turnId);
+
+    for (const run of runs) {
+      const cardEl = timelineEl.createEl("details", {
+        cls: `deepsidian-tool-card ${run.ok === false ? "is-error" : run.ok === null ? "is-running" : "is-ok"}`
+      });
+      const summaryEl = cardEl.createEl("summary");
+      summaryEl.createSpan({ cls: "deepsidian-tool-name", text: run.name });
+      summaryEl.createSpan({ cls: "deepsidian-tool-status", text: run.ok === false ? "失败" : run.ok === null ? "未完成" : "完成" });
+
+      const argsEl = cardEl.createEl("pre", { cls: "deepsidian-tool-args" });
+      argsEl.setText(JSON.stringify(run.args, null, 2));
+
+      const resultEl = cardEl.createEl("pre", { cls: "deepsidian-tool-result" });
+      resultEl.setText(run.content || "(无结果预览)");
+      this.renderToolActionButtons(cardEl, run);
+    }
+  }
+
+  private ensureToolTimeline(turnId: string) {
+    const cached = this.timelineEls.get(turnId);
+
+    if (cached?.isConnected) {
+      return cached;
+    }
+
+    const timelineEl = this.transcriptEl.createDiv({ cls: "deepsidian-tool-timeline" });
+    const headerEl = timelineEl.createDiv({ cls: "deepsidian-tool-timeline-header" });
+    headerEl.createSpan({ text: "执行时间线" });
+
+    if (this.hasUndoableSnapshots(turnId)) {
+      const undoButton = headerEl.createEl("button", {
+        cls: "deepsidian-tool-action",
+        text: "撤销本轮写入"
+      });
+      undoButton.addEventListener("click", () => {
+        void this.undoTurnWrites(turnId);
+      });
+    }
+
+    this.timelineEls.set(turnId, timelineEl);
+    return timelineEl;
+  }
+
+  private renderToolActionButtons(cardEl: HTMLElement, run: DeepSidianToolRun) {
+    const old = cardEl.querySelector(".deepsidian-tool-actions");
+
+    if (old) {
+      old.remove();
+    }
+
+    if (run.ok !== false) {
+      return;
+    }
+
+    const actionsEl = cardEl.createDiv({ cls: "deepsidian-tool-actions" });
+    const retryButton = actionsEl.createEl("button", { cls: "deepsidian-tool-action", text: "重试工具" });
+    retryButton.addEventListener("click", () => {
+      void this.retryToolRun(run, cardEl as HTMLDetailsElement);
+    });
+
+    if (run.content.includes("fetch-proxy") || run.content.includes("127.0.0.1:3001")) {
+      const copyButton = actionsEl.createEl("button", { cls: "deepsidian-tool-action", text: "复制启动命令" });
+      copyButton.addEventListener("click", async () => {
+        await navigator.clipboard.writeText("cd fetch-proxy && npm run dev");
+        new Notice("已复制 fetch-proxy 启动命令。");
+      });
+    }
+
+    if (/未配置|未启用|权限不足|API Key|写入权限/.test(run.content)) {
+      const settingsButton = actionsEl.createEl("button", { cls: "deepsidian-tool-action", text: "打开设置" });
+      settingsButton.addEventListener("click", () => {
+        this.settingsOpen = true;
+        this.renderInlineSettings();
+      });
+    }
+  }
+
+  private async retryToolRun(run: DeepSidianToolRun, cardEl: HTMLDetailsElement) {
+    cardEl.removeClass("is-error");
+    cardEl.addClass("is-running");
+    const statusEl = cardEl.querySelector(".deepsidian-tool-status") as HTMLElement | null;
+    const resultEl = cardEl.querySelector(".deepsidian-tool-result") as HTMLElement | null;
+    statusEl?.setText("运行中");
+    resultEl?.setText("...");
+
+    const previousTurnId = this.activeTurnId;
+    this.activeTurnId = run.turnId;
+
+    try {
+      const result = await executeVaultTool(this.buildToolContext(undefined, true), run.name, run.args);
+      run.ok = result.ok;
+      run.content = this.clipToolContent(result.content);
+      run.finishedAt = Date.now();
+
+      cardEl.removeClass("is-running");
+      cardEl.addClass(result.ok ? "is-ok" : "is-error");
+      statusEl?.setText(result.ok ? "完成" : "失败");
+      resultEl?.setText(result.content);
+      this.renderToolActionButtons(cardEl, run);
+      await this.persistCurrentSession();
+    } finally {
+      this.activeTurnId = previousTurnId;
+    }
   }
 
   private async renderMarkdown(targetEl: HTMLElement, content: string) {
@@ -813,6 +1140,81 @@ export class DeepSidianView extends ItemView {
     return new Promise((resolve) => {
       new CommandConfirmModal(this.app, command, description, resolve).open();
     });
+  }
+
+  private confirmWrite(request: WriteConfirmationRequest): Promise<boolean> {
+    return new Promise((resolve) => {
+      new WriteConfirmModal(this.app, request, resolve).open();
+    });
+  }
+
+  private recordUndo(snapshot: UndoSnapshotInput) {
+    const turnId = this.activeTurnId ?? "manual";
+    this.undoSnapshots.push({
+      id: this.createTurnId(),
+      turnId,
+      action: snapshot.action,
+      target: snapshot.target,
+      path: snapshot.path,
+      beforeContent: snapshot.beforeContent,
+      afterContent: snapshot.afterContent,
+      createdAt: Date.now()
+    });
+    this.ensureUndoButton(turnId);
+  }
+
+  private ensureUndoButton(turnId: string) {
+    const timelineEl = this.timelineEls.get(turnId);
+
+    if (!timelineEl || timelineEl.querySelector(".deepsidian-undo-turn")) {
+      return;
+    }
+
+    const headerEl = timelineEl.querySelector(".deepsidian-tool-timeline-header");
+    const undoButton = headerEl?.createEl("button", {
+      cls: "deepsidian-tool-action deepsidian-undo-turn",
+      text: "撤销本轮写入"
+    });
+    undoButton?.addEventListener("click", () => {
+      void this.undoTurnWrites(turnId);
+    });
+  }
+
+  private hasUndoableSnapshots(turnId: string) {
+    return this.undoSnapshots.some((snapshot) => snapshot.turnId === turnId && !snapshot.undoneAt);
+  }
+
+  private async undoTurnWrites(turnId: string) {
+    const snapshots = this.undoSnapshots
+      .filter((snapshot) => snapshot.turnId === turnId && !snapshot.undoneAt)
+      .sort((a, b) => b.createdAt - a.createdAt);
+
+    if (!snapshots.length) {
+      new Notice("本轮没有可撤销的写入。");
+      return;
+    }
+
+    for (const snapshot of snapshots) {
+      const file = this.app.vault.getAbstractFileByPath(snapshot.path);
+
+      if (snapshot.beforeContent === null) {
+        if (file instanceof TFile) {
+          await this.app.vault.delete(file);
+        }
+      } else if (file instanceof TFile) {
+        await this.app.vault.modify(file, snapshot.beforeContent);
+      } else {
+        await this.plugin.ensureVaultFolderForPath(snapshot.path);
+        await this.app.vault.create(snapshot.path, snapshot.beforeContent);
+      }
+
+      snapshot.undoneAt = Date.now();
+    }
+
+    await this.persistCurrentSession();
+    new Notice(`已撤销本轮 ${snapshots.length} 个写入。`);
+    this.renderConversation();
+    this.renderSessionBar();
   }
 
   private async summarizeText(text: string, prompt: string): Promise<string> {
@@ -915,6 +1317,95 @@ export class DeepSidianView extends ItemView {
     this.renderTokenMeta();
   }
 
+  private formatSessionMemory(): string | null {
+    const memory = this.currentSession?.memory;
+
+    if (!memory) {
+      return null;
+    }
+
+    const parts: string[] = ["DeepSidian 会话工作记忆（压缩上下文，只作任务延续参考）："];
+
+    if (memory.currentGoal) {
+      parts.push(`当前目标：${memory.currentGoal}`);
+    }
+
+    if (memory.files.length) {
+      parts.push(`相关文件：${memory.files.slice(-8).join("；")}`);
+    }
+
+    if (memory.completed.length) {
+      parts.push(`已完成：${memory.completed.slice(-8).join("；")}`);
+    }
+
+    if (memory.blockers.length) {
+      parts.push(`失败/阻塞：${memory.blockers.slice(-6).join("；")}`);
+    }
+
+    if (memory.notes.length) {
+      parts.push(`关键结论：${memory.notes.slice(-5).join("；")}`);
+    }
+
+    return parts.length > 1 ? parts.join("\n") : null;
+  }
+
+  private updateSessionMemory(userText: string, assistantText: string, turnId: string) {
+    const now = Date.now();
+    const memory = this.currentSession.memory ?? {
+      updatedAt: now,
+      completed: [],
+      blockers: [],
+      files: [],
+      notes: []
+    };
+    const runs = this.toolRuns.filter((run) => run.turnId === turnId);
+    const snapshots = this.undoSnapshots.filter((snapshot) => snapshot.turnId === turnId);
+
+    memory.updatedAt = now;
+    memory.currentGoal = userText.trim().replace(/\s+/g, " ").slice(0, 180);
+    memory.completed = this.compactMemoryList([
+      ...memory.completed,
+      ...runs
+        .filter((run) => run.ok === true)
+        .map((run) => `${run.name}${this.describeToolTarget(run.args)}`)
+    ], 16);
+    memory.blockers = this.compactMemoryList([
+      ...memory.blockers,
+      ...runs
+        .filter((run) => run.ok === false)
+        .map((run) => `${run.name}: ${run.content.replace(/\s+/g, " ").slice(0, 160)}`)
+    ], 12);
+    memory.files = this.compactMemoryList([
+      ...memory.files,
+      ...runs.flatMap((run) => this.extractToolPaths(run.args)),
+      ...snapshots.map((snapshot) => snapshot.path)
+    ], 16);
+
+    const note = assistantText.trim().replace(/\s+/g, " ").slice(0, 220);
+
+    if (note) {
+      memory.notes = this.compactMemoryList([...memory.notes, note], 10);
+    }
+
+    this.currentSession.memory = memory;
+  }
+
+  private compactMemoryList(values: string[], limit: number) {
+    const clean = values.map((value) => value.trim()).filter(Boolean);
+    return [...new Set(clean)].slice(-limit);
+  }
+
+  private describeToolTarget(args: Record<string, unknown>) {
+    const target = args.path ?? args.url ?? args.source ?? args.query ?? "";
+    return typeof target === "string" && target ? `(${target.slice(0, 80)})` : "";
+  }
+
+  private extractToolPaths(args: Record<string, unknown>) {
+    return ["path", "source", "filename"]
+      .map((key) => args[key])
+      .filter((value): value is string => typeof value === "string" && !/^https?:\/\//i.test(value));
+  }
+
   private async persistCurrentSession(firstUserMessage?: string) {
     if (!this.currentSession) {
       return;
@@ -925,10 +1416,33 @@ export class DeepSidianView extends ItemView {
     }
 
     this.currentSession.messages = [...this.conversation];
+    this.currentSession.toolRuns = [...this.toolRuns];
+    this.currentSession.undoSnapshots = [...this.undoSnapshots];
 
     if (this.currentSession.messages.length) {
       await this.plugin.saveSession(this.currentSession);
       this.sessions = await this.plugin.listSessions();
     }
+  }
+
+  private createTurnId() {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  private cloneToolArgs(args: Record<string, unknown>) {
+    try {
+      return JSON.parse(JSON.stringify(args)) as Record<string, unknown>;
+    } catch {
+      return {
+        _unserializable: String(args)
+      };
+    }
+  }
+
+  private clipToolContent(content: string) {
+    const maxLength = 4000;
+    return content.length > maxLength
+      ? `${content.slice(0, maxLength)}\n\n[工具结果过长，历史记录已截断。]`
+      : content;
   }
 }

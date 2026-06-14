@@ -329,6 +329,13 @@ var DEFAULT_SETTINGS = {
   maxContextCharacters: 12e3,
   maxToolSteps: 8,
   enableVaultWrites: false,
+  writePermissions: {
+    createNotes: false,
+    editNotes: false,
+    appendActiveNote: false,
+    insertAtCursor: false,
+    downloadAttachments: false
+  },
   thinkingLevel: "low",
   enableBash: false,
   bashAutoApprove: false
@@ -403,12 +410,17 @@ var DeepSidianSettingTab = class extends import_obsidian2.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian2.Setting(containerEl).setName("\u5141\u8BB8 AI \u5199\u5165\u7B14\u8BB0").setDesc("\u5F00\u542F\u540E write_file/edit_file \u5DE5\u5177\u53EF\u4EE5\u521B\u5EFA\u6216\u4FEE\u6539\u5E93\u5185\u7B14\u8BB0\u3002").addToggle((toggle) => {
+    new import_obsidian2.Setting(containerEl).setName("\u5141\u8BB8 AI \u5199\u5165\u7B14\u8BB0").setDesc("\u5199\u5165\u603B\u5F00\u5173\u3002\u5F00\u542F\u540E\u4ECD\u9700\u5206\u522B\u5141\u8BB8\u5177\u4F53\u5199\u5165\u7C7B\u578B\u3002").addToggle((toggle) => {
       toggle.setValue(this.plugin.settings.enableVaultWrites).onChange(async (value) => {
         this.plugin.settings.enableVaultWrites = value;
         await this.plugin.saveSettings();
       });
     });
+    this.addWritePermissionToggle(containerEl, "createNotes", "\u5141\u8BB8\u521B\u5EFA\u65B0\u7B14\u8BB0");
+    this.addWritePermissionToggle(containerEl, "editNotes", "\u5141\u8BB8\u7F16\u8F91\u5DF2\u6709\u7B14\u8BB0");
+    this.addWritePermissionToggle(containerEl, "appendActiveNote", "\u5141\u8BB8\u8FFD\u52A0\u5230\u5F53\u524D\u7B14\u8BB0");
+    this.addWritePermissionToggle(containerEl, "insertAtCursor", "\u5141\u8BB8\u4FEE\u6539\u5F53\u524D\u9009\u533A/\u5149\u6807");
+    this.addWritePermissionToggle(containerEl, "downloadAttachments", "\u5141\u8BB8\u4E0B\u8F7D\u9644\u4EF6");
     new import_obsidian2.Setting(containerEl).setName("\u601D\u8003\u6DF1\u5EA6").setDesc("Low=\u4E0D\u601D\u8003(\u6700\u5FEB\u6700\u7701)\uFF1BMed/High/Max \u5F00\u542F thinking\uFF0C\u5E76\u5728\u7ED9\u51FA\u7B54\u6848\u540E\u5206\u522B\u518D\u505A 1/2/3 \u8F6E\u81EA\u6211\u53CD\u601D\u6539\u8FDB\uFF0C\u8D8A\u9AD8\u8D8A\u6DF1\u8D8A\u6162\u8D8A\u8D35\u3002").addDropdown((dropdown) => {
       for (const level of THINKING_LEVELS) {
         dropdown.addOption(level, THINKING_LEVEL_LABELS[level]);
@@ -442,6 +454,14 @@ var DeepSidianSettingTab = class extends import_obsidian2.PluginSettingTab {
           button.setDisabled(false);
           button.setButtonText("\u6D4B\u8BD5\u8FDE\u63A5");
         }
+      });
+    });
+  }
+  addWritePermissionToggle(containerEl, key, label) {
+    new import_obsidian2.Setting(containerEl).setName(label).setDesc("\u4EC5\u5728\u201C\u5141\u8BB8 AI \u5199\u5165\u7B14\u8BB0\u201D\u603B\u5F00\u5173\u5F00\u542F\u65F6\u751F\u6548\u3002").addToggle((toggle) => {
+      toggle.setValue(this.plugin.settings.writePermissions[key]).onChange(async (value) => {
+        this.plugin.settings.writePermissions[key] = value;
+        await this.plugin.saveSettings();
       });
     });
   }
@@ -934,7 +954,7 @@ async function executeVaultTool(context, name, rawArgs) {
       case "append_to_active_note":
         return await appendToActiveNote(context, args);
       case "insert_at_cursor":
-        return insertAtCursor(context, args);
+        return await insertAtCursor(context, args);
       case "edit_file":
         return await editFile(context, args);
       case "web_fetch":
@@ -1069,17 +1089,15 @@ async function searchNotes({ app }, args) {
     content: matches.length ? matches.join("\n") : `\u6CA1\u6709\u641C\u7D22\u5230\uFF1A${query}`
   };
 }
-async function writeFile({ app, settings }, args) {
-  if (!settings.enableVaultWrites) {
-    return {
-      ok: false,
-      content: "\u5199\u5165\u5DE5\u5177\u672A\u542F\u7528\u3002\u8BF7\u5728 DeepSidian \u4FA7\u8FB9\u680F\u8BBE\u7F6E\u4E2D\u6253\u5F00\u201C\u5141\u8BB8\u5199\u5165\u7B14\u8BB0\u201D\u3002"
-    };
-  }
+async function writeFile({ app, settings, confirmWrite, recordUndo }, args) {
   const path = getRequiredPath(args.path);
   const content = typeof args.content === "string" ? args.content : "";
   const overwrite = args.overwrite === true;
   const existing = app.vault.getAbstractFileByPath(path);
+  const permission = requireWritePermission(settings, existing ? "editNotes" : "createNotes");
+  if (permission) {
+    return permission;
+  }
   if (existing && !overwrite) {
     return {
       ok: false,
@@ -1092,23 +1110,44 @@ async function writeFile({ app, settings }, args) {
       content: `\u8DEF\u5F84\u4E0D\u662F\u6587\u4EF6\uFF1A${path}`
     };
   }
+  const beforeContent = existing instanceof import_obsidian3.TFile ? await app.vault.cachedRead(existing) : null;
+  if (confirmWrite) {
+    const approved = await confirmWrite({
+      action: existing ? "\u8986\u76D6\u6587\u4EF6" : "\u521B\u5EFA\u6587\u4EF6",
+      target: path,
+      preview: previewText(content),
+      before: beforeContent,
+      after: content
+    });
+    if (!approved) {
+      return {
+        ok: false,
+        content: "\u7528\u6237\u53D6\u6D88\u5199\u5165\u3002"
+      };
+    }
+  }
   await ensureParentFolder(app, path);
   if (existing instanceof import_obsidian3.TFile) {
     await app.vault.modify(existing, content);
   } else {
     await app.vault.create(path, content);
   }
+  recordUndo == null ? void 0 : recordUndo({
+    action: existing ? "\u8986\u76D6\u6587\u4EF6" : "\u521B\u5EFA\u6587\u4EF6",
+    target: path,
+    path,
+    beforeContent,
+    afterContent: content
+  });
   return {
     ok: true,
     content: `${existing ? "\u5DF2\u8986\u76D6" : "\u5DF2\u521B\u5EFA"}\uFF1A${path}`
   };
 }
-async function appendToActiveNote({ app, settings }, args) {
-  if (!settings.enableVaultWrites) {
-    return {
-      ok: false,
-      content: "\u5199\u5165\u5DE5\u5177\u672A\u542F\u7528\u3002\u8BF7\u5728 DeepSidian \u4FA7\u8FB9\u680F\u8BBE\u7F6E\u4E2D\u6253\u5F00\u5199\u5165\u5F00\u5173\u3002"
-    };
+async function appendToActiveNote({ app, settings, confirmWrite, recordUndo }, args) {
+  const permission = requireWritePermission(settings, "appendActiveNote");
+  if (permission) {
+    return permission;
   }
   const file = app.workspace.getActiveFile();
   if (!file) {
@@ -1126,18 +1165,40 @@ async function appendToActiveNote({ app, settings }, args) {
   }
   const current = await app.vault.cachedRead(file);
   const separator = current.endsWith("\n") ? "\n" : "\n\n";
-  await app.vault.modify(file, `${current}${separator}${content}`);
+  const afterContent = `${current}${separator}${content}`;
+  if (confirmWrite) {
+    const approved = await confirmWrite({
+      action: "\u8FFD\u52A0\u5230\u5F53\u524D\u7B14\u8BB0",
+      target: file.path,
+      preview: previewText(content),
+      before: current,
+      after: afterContent
+    });
+    if (!approved) {
+      return {
+        ok: false,
+        content: "\u7528\u6237\u53D6\u6D88\u8FFD\u52A0\u3002"
+      };
+    }
+  }
+  await app.vault.modify(file, afterContent);
+  recordUndo == null ? void 0 : recordUndo({
+    action: "\u8FFD\u52A0\u5230\u5F53\u524D\u7B14\u8BB0",
+    target: file.path,
+    path: file.path,
+    beforeContent: current,
+    afterContent
+  });
   return {
     ok: true,
     content: `\u5DF2\u8FFD\u52A0\u5230\uFF1A${file.path}`
   };
 }
-function insertAtCursor({ app, settings }, args) {
-  if (!settings.enableVaultWrites) {
-    return {
-      ok: false,
-      content: "\u5199\u5165\u5DE5\u5177\u672A\u542F\u7528\u3002\u8BF7\u5728 DeepSidian \u4FA7\u8FB9\u680F\u8BBE\u7F6E\u4E2D\u6253\u5F00\u5199\u5165\u5F00\u5173\u3002"
-    };
+async function insertAtCursor({ app, settings, confirmWrite, recordUndo }, args) {
+  var _a, _b;
+  const permission = requireWritePermission(settings, "insertAtCursor");
+  if (permission) {
+    return permission;
   }
   const view = app.workspace.getActiveViewOfType(import_obsidian3.MarkdownView);
   const content = typeof args.content === "string" ? args.content : "";
@@ -1153,18 +1214,42 @@ function insertAtCursor({ app, settings }, args) {
       content: "content \u4E0D\u80FD\u4E3A\u7A7A\u3002"
     };
   }
+  const beforeContent = typeof view.editor.getValue === "function" ? view.editor.getValue() : view.editor.getSelection();
+  if (confirmWrite) {
+    const approved = await confirmWrite({
+      action: view.editor.getSelection() ? "\u66FF\u6362\u5F53\u524D\u9009\u533A" : "\u63D2\u5165\u5230\u5F53\u524D\u5149\u6807",
+      target: (_b = (_a = view.file) == null ? void 0 : _a.path) != null ? _b : "\u5F53\u524D\u7F16\u8F91\u5668",
+      preview: previewText(content),
+      before: view.editor.getSelection() || null,
+      after: content
+    });
+    if (!approved) {
+      return {
+        ok: false,
+        content: "\u7528\u6237\u53D6\u6D88\u63D2\u5165\u3002"
+      };
+    }
+  }
   view.editor.replaceSelection(content);
+  const afterContent = typeof view.editor.getValue === "function" ? view.editor.getValue() : content;
+  if (view.file) {
+    recordUndo == null ? void 0 : recordUndo({
+      action: "\u7F16\u8F91\u5F53\u524D\u7F16\u8F91\u5668",
+      target: view.file.path,
+      path: view.file.path,
+      beforeContent,
+      afterContent
+    });
+  }
   return {
     ok: true,
     content: "\u5DF2\u63D2\u5165\u5230\u5F53\u524D\u5149\u6807\u4F4D\u7F6E\u6216\u66FF\u6362\u9009\u533A\u3002"
   };
 }
-async function editFile({ app, settings }, args) {
-  if (!settings.enableVaultWrites) {
-    return {
-      ok: false,
-      content: "\u7F16\u8F91\u5DE5\u5177\u672A\u542F\u7528\u3002\u8BF7\u5728 DeepSidian \u4FA7\u8FB9\u680F\u8BBE\u7F6E\u4E2D\u6253\u5F00\u201C\u5141\u8BB8\u5199\u5165\u7B14\u8BB0\u201D\u3002"
-    };
+async function editFile({ app, settings, confirmWrite, recordUndo }, args) {
+  const permission = requireWritePermission(settings, "editNotes");
+  if (permission) {
+    return permission;
   }
   const path = getRequiredPath(args.path);
   const oldString = typeof args.old_string === "string" ? args.old_string : "";
@@ -1197,7 +1282,34 @@ async function editFile({ app, settings }, args) {
       content: "old_string \u51FA\u73B0\u4E86\u591A\u6B21\uFF0C\u8BF7\u63D0\u4F9B\u66F4\u7CBE\u786E\u7684\u4E0A\u4E0B\u6587\u3002"
     };
   }
-  await app.vault.modify(file, content.replace(oldString, newString));
+  const afterContent = content.replace(oldString, newString);
+  if (confirmWrite) {
+    const approved = await confirmWrite({
+      action: "\u7F16\u8F91\u6587\u4EF6",
+      target: path,
+      preview: `\u66FF\u6362\u524D\uFF1A
+${previewText(oldString)}
+
+\u66FF\u6362\u540E\uFF1A
+${previewText(newString)}`,
+      before: content,
+      after: afterContent
+    });
+    if (!approved) {
+      return {
+        ok: false,
+        content: "\u7528\u6237\u53D6\u6D88\u7F16\u8F91\u3002"
+      };
+    }
+  }
+  await app.vault.modify(file, afterContent);
+  recordUndo == null ? void 0 : recordUndo({
+    action: "\u7F16\u8F91\u6587\u4EF6",
+    target: path,
+    path,
+    beforeContent: content,
+    afterContent
+  });
   return {
     ok: true,
     content: `\u5DF2\u7F16\u8F91\uFF1A${path}`
@@ -1339,7 +1451,11 @@ async function readImage({ app, describeImage }, args) {
 ${description}`
   };
 }
-async function downloadImage({ app }, args) {
+async function downloadImage({ app, settings, confirmWrite, recordUndo }, args) {
+  const permission = requireWritePermission(settings, "downloadAttachments");
+  if (permission) {
+    return permission;
+  }
   const url = typeof args.url === "string" ? args.url.trim() : "";
   if (!/^https?:\/\//i.test(url)) {
     return {
@@ -1361,7 +1477,29 @@ async function downloadImage({ app }, args) {
       content: `\u6587\u4EF6\u5DF2\u5B58\u5728\uFF1A${path}`
     };
   }
+  if (confirmWrite) {
+    const approved = await confirmWrite({
+      action: "\u4E0B\u8F7D\u56FE\u7247\u5230\u9644\u4EF6",
+      target: path,
+      preview: `\u6765\u6E90\uFF1A${url}
+\u7C7B\u578B\uFF1A${image.mime}
+\u5927\u5C0F\uFF1A${image.bytes.byteLength} bytes`
+    });
+    if (!approved) {
+      return {
+        ok: false,
+        content: "\u7528\u6237\u53D6\u6D88\u4E0B\u8F7D\u3002"
+      };
+    }
+  }
   await app.vault.createBinary(path, image.bytes);
+  recordUndo == null ? void 0 : recordUndo({
+    action: "\u4E0B\u8F7D\u56FE\u7247\u5230\u9644\u4EF6",
+    target: path,
+    path,
+    beforeContent: null,
+    afterContent: `[binary ${image.mime}, ${image.bytes.byteLength} bytes]`
+  });
   return {
     ok: true,
     content: `\u5DF2\u4E0B\u8F7D\uFF1A${path}`
@@ -1492,6 +1630,35 @@ function truncateOutput(text) {
   return text.length > MAX_TOOL_OUTPUT ? `${text.slice(0, MAX_TOOL_OUTPUT)}
 
 [\u8F93\u51FA\u8FC7\u957F\uFF0C\u5DF2\u622A\u65AD\u3002]` : text;
+}
+function previewText(text) {
+  const maxLength = 6e3;
+  return text.length > maxLength ? `${text.slice(0, maxLength)}
+
+[\u9884\u89C8\u8FC7\u957F\uFF0C\u5DF2\u622A\u65AD\u3002]` : text;
+}
+var WRITE_PERMISSION_LABELS = {
+  createNotes: "\u521B\u5EFA\u65B0\u7B14\u8BB0",
+  editNotes: "\u7F16\u8F91\u5DF2\u6709\u7B14\u8BB0",
+  appendActiveNote: "\u8FFD\u52A0\u5230\u5F53\u524D\u7B14\u8BB0",
+  insertAtCursor: "\u4FEE\u6539\u5F53\u524D\u9009\u533A/\u5149\u6807",
+  downloadAttachments: "\u4E0B\u8F7D\u9644\u4EF6"
+};
+function requireWritePermission(settings, permission) {
+  var _a;
+  if (!settings.enableVaultWrites) {
+    return {
+      ok: false,
+      content: "\u5199\u5165\u5DE5\u5177\u672A\u542F\u7528\u3002\u8BF7\u5728 DeepSidian \u4FA7\u8FB9\u680F\u8BBE\u7F6E\u4E2D\u6253\u5F00\u201C\u5199\u5165\u201D\u603B\u5F00\u5173\u3002"
+    };
+  }
+  if (!((_a = settings.writePermissions) == null ? void 0 : _a[permission])) {
+    return {
+      ok: false,
+      content: `\u5199\u5165\u6743\u9650\u4E0D\u8DB3\uFF1A\u672A\u5141\u8BB8\u201C${WRITE_PERMISSION_LABELS[permission]}\u201D\u3002\u8BF7\u5728 DeepSidian \u8BBE\u7F6E\u4E2D\u5F00\u542F\u5BF9\u5E94\u6743\u9650\u3002`
+    };
+  }
+  return null;
 }
 async function ensureParentFolder(app, path) {
   const segments = path.split("/");
@@ -1983,15 +2150,118 @@ var CommandConfirmModal = class extends import_obsidian4.Modal {
     this.close();
   }
 };
+var WriteConfirmModal = class extends import_obsidian4.Modal {
+  constructor(app, request, onChoice) {
+    super(app);
+    this.request = request;
+    this.onChoice = onChoice;
+    this.resolved = false;
+  }
+  onOpen() {
+    this.titleEl.setText("\u786E\u8BA4\u5199\u5165\uFF1F");
+    this.contentEl.createEl("p", {
+      cls: "deepsidian-confirm-desc",
+      text: `${this.request.action}\uFF1A${this.request.target}`
+    });
+    renderDiffPreview(this.contentEl, this.request);
+    const actionsEl = this.contentEl.createDiv({ cls: "deepsidian-confirm-actions" });
+    const denyButton = actionsEl.createEl("button", { text: "\u53D6\u6D88" });
+    const allowButton = actionsEl.createEl("button", { cls: "mod-cta", text: "\u786E\u8BA4\u5199\u5165" });
+    denyButton.addEventListener("click", () => this.choose(false));
+    allowButton.addEventListener("click", () => this.choose(true));
+  }
+  onClose() {
+    this.choose(false);
+  }
+  choose(approved) {
+    if (this.resolved) {
+      return;
+    }
+    this.resolved = true;
+    this.onChoice(approved);
+    this.close();
+  }
+};
+function renderDiffPreview(containerEl, request) {
+  var _a;
+  if (typeof request.before !== "undefined" && typeof request.after === "string") {
+    const diffEl = containerEl.createDiv({ cls: "deepsidian-diff-preview" });
+    const headerEl = diffEl.createDiv({ cls: "deepsidian-diff-header", text: "Before / After diff" });
+    const bodyEl = diffEl.createDiv({ cls: "deepsidian-diff-body" });
+    for (const line of buildLineDiff((_a = request.before) != null ? _a : "", request.after)) {
+      const cls = line.type === "added" ? "deepsidian-diff-line is-added" : line.type === "removed" ? "deepsidian-diff-line is-removed" : "deepsidian-diff-line is-context";
+      const prefix = line.type === "added" ? "+ " : line.type === "removed" ? "- " : "  ";
+      bodyEl.createDiv({ cls, text: `${prefix}${line.text}` });
+    }
+    if (!bodyEl.children.length) {
+      bodyEl.createDiv({ cls: "deepsidian-diff-line is-context", text: "  \uFF08\u65E0\u53D8\u5316\uFF09" });
+    }
+    headerEl.setAttribute("title", "\u7EA2\u8272\u4E3A\u5220\u9664\uFF0C\u7EFF\u8272\u4E3A\u65B0\u589E\u3002");
+    return;
+  }
+  containerEl.createEl("pre", { cls: "deepsidian-confirm-cmd" }).setText(request.preview);
+}
+function buildLineDiff(before, after) {
+  const maxInputLines = 360;
+  const beforeAll = before.split("\n");
+  const afterAll = after.split("\n");
+  const beforeLines = beforeAll.slice(0, maxInputLines);
+  const afterLines = afterAll.slice(0, maxInputLines);
+  const maxLines = 240;
+  const matrix = Array.from(
+    { length: beforeLines.length + 1 },
+    () => Array(afterLines.length + 1).fill(0)
+  );
+  for (let i2 = beforeLines.length - 1; i2 >= 0; i2 -= 1) {
+    for (let j2 = afterLines.length - 1; j2 >= 0; j2 -= 1) {
+      matrix[i2][j2] = beforeLines[i2] === afterLines[j2] ? matrix[i2 + 1][j2 + 1] + 1 : Math.max(matrix[i2 + 1][j2], matrix[i2][j2 + 1]);
+    }
+  }
+  const result = [];
+  let i = 0;
+  let j = 0;
+  while (i < beforeLines.length && j < afterLines.length && result.length < maxLines) {
+    if (beforeLines[i] === afterLines[j]) {
+      result.push({ type: "context", text: beforeLines[i] });
+      i += 1;
+      j += 1;
+    } else if (matrix[i + 1][j] >= matrix[i][j + 1]) {
+      result.push({ type: "removed", text: beforeLines[i] });
+      i += 1;
+    } else {
+      result.push({ type: "added", text: afterLines[j] });
+      j += 1;
+    }
+  }
+  while (i < beforeLines.length && result.length < maxLines) {
+    result.push({ type: "removed", text: beforeLines[i] });
+    i += 1;
+  }
+  while (j < afterLines.length && result.length < maxLines) {
+    result.push({ type: "added", text: afterLines[j] });
+    j += 1;
+  }
+  if (i < beforeLines.length || j < afterLines.length) {
+    result.push({ type: "context", text: "\u2026 diff \u8FC7\u957F\uFF0C\u5DF2\u622A\u65AD\u3002" });
+  }
+  if (beforeAll.length > maxInputLines || afterAll.length > maxInputLines) {
+    result.push({ type: "context", text: "\u2026 \u6587\u4EF6\u8FC7\u957F\uFF0C\u4EC5\u9884\u89C8\u524D 360 \u884C\u3002" });
+  }
+  return result;
+}
 var DeepSidianView = class extends import_obsidian4.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
     this.conversation = [];
+    this.toolRuns = [];
+    this.undoSnapshots = [];
+    this.timelineEls = /* @__PURE__ */ new Map();
     this.sessions = [];
     this.settingsOpen = false;
     this.isBusy = false;
     this.currentAbort = null;
+    this.activeTurnId = null;
     this.sessionPromptTokens = 0;
     this.sessionCompletionTokens = 0;
     this.sessionCostUsd = 0;
@@ -2006,10 +2276,12 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     return "deepsidian";
   }
   async onOpen() {
-    var _a;
+    var _a, _b, _c;
     this.sessions = await this.plugin.listSessions();
     this.currentSession = (_a = this.sessions[0]) != null ? _a : this.plugin.createSession();
     this.conversation = [...this.currentSession.messages];
+    this.toolRuns = [...(_b = this.currentSession.toolRuns) != null ? _b : []];
+    this.undoSnapshots = [...(_c = this.currentSession.undoSnapshots) != null ? _c : []];
     this.render();
   }
   async onClose() {
@@ -2193,6 +2465,8 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     await this.persistCurrentSession();
     this.currentSession = this.plugin.createSession();
     this.conversation = [];
+    this.toolRuns = [];
+    this.undoSnapshots = [];
     this.sessions = [this.currentSession, ...this.sessions.filter((session) => session.id !== this.currentSession.id)];
     this.clearTodoPanel();
     this.resetSessionUsage();
@@ -2200,6 +2474,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     this.renderSessionBar();
   }
   async openSession(sessionId) {
+    var _a, _b;
     await this.persistCurrentSession();
     const session = await this.plugin.loadSession(sessionId);
     if (!session) {
@@ -2208,6 +2483,8 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     }
     this.currentSession = session;
     this.conversation = [...session.messages];
+    this.toolRuns = [...(_a = session.toolRuns) != null ? _a : []];
+    this.undoSnapshots = [...(_b = session.undoSnapshots) != null ? _b : []];
     this.sessions = await this.plugin.listSessions();
     this.clearTodoPanel();
     this.resetSessionUsage();
@@ -2221,6 +2498,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
   renderConversation() {
     var _a, _b;
     this.transcriptEl.empty();
+    this.timelineEls.clear();
     if (!this.conversation.length) {
       this.renderEmptyState();
       return;
@@ -2231,6 +2509,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       } else if (message.role === "assistant") {
         const bubbleEl = this.transcriptEl.createDiv({ cls: "deepsidian-bubble deepsidian-bubble-assistant" });
         void this.renderAssistantInto(bubbleEl, (_b = message.content) != null ? _b : "");
+        this.renderToolHistory(message.turnId);
         this.transcriptEl.scrollTo({ top: this.transcriptEl.scrollHeight });
       }
     }
@@ -2333,6 +2612,12 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       this.plugin.settings.enableVaultWrites = writeToggle.checked;
       await this.plugin.saveSettings();
     });
+    const permissionRow = this.settingsPanelEl.createDiv({ cls: "deepsidian-setting-row deepsidian-setting-row-inline deepsidian-write-permissions" });
+    this.renderInlineWritePermission(permissionRow, "createNotes", "\u65B0\u5EFA");
+    this.renderInlineWritePermission(permissionRow, "editNotes", "\u7F16\u8F91");
+    this.renderInlineWritePermission(permissionRow, "appendActiveNote", "\u8FFD\u52A0");
+    this.renderInlineWritePermission(permissionRow, "insertAtCursor", "\u9009\u533A");
+    this.renderInlineWritePermission(permissionRow, "downloadAttachments", "\u9644\u4EF6");
     const testButton = this.settingsPanelEl.createEl("button", { cls: "deepsidian-secondary-button" });
     testButton.setText("\u6D4B\u8BD5\u8FDE\u63A5");
     testButton.addEventListener("click", async () => {
@@ -2341,6 +2626,16 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       await this.plugin.testConnection();
       testButton.disabled = false;
       testButton.setText("\u6D4B\u8BD5\u8FDE\u63A5");
+    });
+  }
+  renderInlineWritePermission(containerEl, key, label) {
+    const itemEl = containerEl.createEl("label");
+    const checkbox = itemEl.createEl("input", { attr: { type: "checkbox" } });
+    checkbox.checked = this.plugin.settings.writePermissions[key];
+    itemEl.createSpan({ text: label });
+    checkbox.addEventListener("change", async () => {
+      this.plugin.settings.writePermissions[key] = checkbox.checked;
+      await this.plugin.saveSettings();
     });
   }
   async sendMessage() {
@@ -2361,9 +2656,12 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     this.setBusy(true);
     if ((_a = this.emptyStateEl) == null ? void 0 : _a.isConnected) {
       this.transcriptEl.empty();
+      this.timelineEls.clear();
     }
     this.appendBubble("user", userText);
     const pendingEl = this.appendBubble("assistant", "\u6B63\u5728\u601D\u8003...");
+    const turnId = this.createTurnId();
+    this.activeTurnId = turnId;
     try {
       const result = await this.runAgent(userText, abort.signal, pendingEl);
       this.addUsage(result.usage);
@@ -2371,8 +2669,9 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
         await this.renderMarkdown(pendingEl, result.content || "\u5DF2\u4E2D\u65AD\u3002");
         return;
       }
-      this.conversation.push({ role: "user", content: userText });
-      this.conversation.push({ role: "assistant", content: result.content });
+      this.conversation.push({ role: "user", content: userText, turnId });
+      this.conversation.push({ role: "assistant", content: result.content, turnId });
+      this.updateSessionMemory(userText, result.content, turnId);
       await this.persistCurrentSession(userText);
       await this.renderAssistantInto(pendingEl, result.content);
     } catch (error) {
@@ -2384,6 +2683,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       pendingEl.setText(`\u51FA\u9519\u4E86\uFF1A${message}`);
       new import_obsidian4.Notice(`DeepSidian \u8BF7\u6C42\u5931\u8D25\uFF1A${message}`, 8e3);
     } finally {
+      this.activeTurnId = null;
       this.currentAbort = null;
       this.setBusy(false);
     }
@@ -2456,6 +2756,8 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       saveTaskList: (markdown) => this.plugin.saveTaskList(markdown),
       describeImage: (dataUrl, prompt) => this.plugin.createClient().describeImage(dataUrl, prompt),
       summarizeText: (text, prompt) => this.summarizeText(text, prompt),
+      confirmWrite: (request) => this.confirmWrite(request),
+      recordUndo: (snapshot) => this.recordUndo(snapshot),
       confirmCommand: (command, description) => this.confirmCommand(command, description)
     };
     if (allowDispatch) {
@@ -2484,6 +2786,13 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
         content: selectionContext
       });
     }
+    const memoryContext = this.formatSessionMemory();
+    if (memoryContext) {
+      messages.push({
+        role: "system",
+        content: memoryContext
+      });
+    }
     const recentHistory = this.conversation.slice(-MAX_HISTORY_MESSAGES);
     messages.push(...recentHistory);
     messages.push({
@@ -2501,7 +2810,21 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     return bubbleEl;
   }
   startToolCard(toolCall, args) {
-    const cardEl = this.transcriptEl.createEl("details", {
+    var _a;
+    const runId = this.createTurnId();
+    const run = {
+      id: runId,
+      turnId: (_a = this.activeTurnId) != null ? _a : "unknown",
+      toolCallId: toolCall.id,
+      name: toolCall.function.name,
+      args: this.cloneToolArgs(args),
+      ok: null,
+      content: "",
+      startedAt: Date.now()
+    };
+    this.toolRuns.push(run);
+    const timelineEl = this.ensureToolTimeline(run.turnId);
+    const cardEl = timelineEl.createEl("details", {
       cls: "deepsidian-tool-card is-running"
     });
     cardEl.open = true;
@@ -2513,7 +2836,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     const resultEl = cardEl.createEl("pre", { cls: "deepsidian-tool-result" });
     resultEl.setText("...");
     this.transcriptEl.scrollTo({ top: this.transcriptEl.scrollHeight });
-    return { cardEl, statusEl, resultEl };
+    return { cardEl, statusEl, resultEl, runId };
   }
   finishToolCard(elements, ok, content) {
     elements.cardEl.removeClass("is-running");
@@ -2521,7 +2844,111 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     elements.statusEl.setText(ok ? "\u5B8C\u6210" : "\u5931\u8D25");
     elements.resultEl.setText(content);
     elements.cardEl.open = false;
+    if (elements.runId) {
+      const run = this.toolRuns.find((item) => item.id === elements.runId);
+      if (run) {
+        run.ok = ok;
+        run.content = this.clipToolContent(content);
+        run.finishedAt = Date.now();
+        this.renderToolActionButtons(elements.cardEl, run);
+      }
+    }
     this.transcriptEl.scrollTo({ top: this.transcriptEl.scrollHeight });
+  }
+  renderToolHistory(turnId) {
+    if (!turnId) {
+      return;
+    }
+    const runs = this.toolRuns.filter((run) => run.turnId === turnId);
+    if (!runs.length && !this.hasUndoableSnapshots(turnId)) {
+      return;
+    }
+    const timelineEl = this.ensureToolTimeline(turnId);
+    for (const run of runs) {
+      const cardEl = timelineEl.createEl("details", {
+        cls: `deepsidian-tool-card ${run.ok === false ? "is-error" : run.ok === null ? "is-running" : "is-ok"}`
+      });
+      const summaryEl = cardEl.createEl("summary");
+      summaryEl.createSpan({ cls: "deepsidian-tool-name", text: run.name });
+      summaryEl.createSpan({ cls: "deepsidian-tool-status", text: run.ok === false ? "\u5931\u8D25" : run.ok === null ? "\u672A\u5B8C\u6210" : "\u5B8C\u6210" });
+      const argsEl = cardEl.createEl("pre", { cls: "deepsidian-tool-args" });
+      argsEl.setText(JSON.stringify(run.args, null, 2));
+      const resultEl = cardEl.createEl("pre", { cls: "deepsidian-tool-result" });
+      resultEl.setText(run.content || "(\u65E0\u7ED3\u679C\u9884\u89C8)");
+      this.renderToolActionButtons(cardEl, run);
+    }
+  }
+  ensureToolTimeline(turnId) {
+    const cached = this.timelineEls.get(turnId);
+    if (cached == null ? void 0 : cached.isConnected) {
+      return cached;
+    }
+    const timelineEl = this.transcriptEl.createDiv({ cls: "deepsidian-tool-timeline" });
+    const headerEl = timelineEl.createDiv({ cls: "deepsidian-tool-timeline-header" });
+    headerEl.createSpan({ text: "\u6267\u884C\u65F6\u95F4\u7EBF" });
+    if (this.hasUndoableSnapshots(turnId)) {
+      const undoButton = headerEl.createEl("button", {
+        cls: "deepsidian-tool-action",
+        text: "\u64A4\u9500\u672C\u8F6E\u5199\u5165"
+      });
+      undoButton.addEventListener("click", () => {
+        void this.undoTurnWrites(turnId);
+      });
+    }
+    this.timelineEls.set(turnId, timelineEl);
+    return timelineEl;
+  }
+  renderToolActionButtons(cardEl, run) {
+    const old = cardEl.querySelector(".deepsidian-tool-actions");
+    if (old) {
+      old.remove();
+    }
+    if (run.ok !== false) {
+      return;
+    }
+    const actionsEl = cardEl.createDiv({ cls: "deepsidian-tool-actions" });
+    const retryButton = actionsEl.createEl("button", { cls: "deepsidian-tool-action", text: "\u91CD\u8BD5\u5DE5\u5177" });
+    retryButton.addEventListener("click", () => {
+      void this.retryToolRun(run, cardEl);
+    });
+    if (run.content.includes("fetch-proxy") || run.content.includes("127.0.0.1:3001")) {
+      const copyButton = actionsEl.createEl("button", { cls: "deepsidian-tool-action", text: "\u590D\u5236\u542F\u52A8\u547D\u4EE4" });
+      copyButton.addEventListener("click", async () => {
+        await navigator.clipboard.writeText("cd fetch-proxy && npm run dev");
+        new import_obsidian4.Notice("\u5DF2\u590D\u5236 fetch-proxy \u542F\u52A8\u547D\u4EE4\u3002");
+      });
+    }
+    if (/未配置|未启用|权限不足|API Key|写入权限/.test(run.content)) {
+      const settingsButton = actionsEl.createEl("button", { cls: "deepsidian-tool-action", text: "\u6253\u5F00\u8BBE\u7F6E" });
+      settingsButton.addEventListener("click", () => {
+        this.settingsOpen = true;
+        this.renderInlineSettings();
+      });
+    }
+  }
+  async retryToolRun(run, cardEl) {
+    cardEl.removeClass("is-error");
+    cardEl.addClass("is-running");
+    const statusEl = cardEl.querySelector(".deepsidian-tool-status");
+    const resultEl = cardEl.querySelector(".deepsidian-tool-result");
+    statusEl == null ? void 0 : statusEl.setText("\u8FD0\u884C\u4E2D");
+    resultEl == null ? void 0 : resultEl.setText("...");
+    const previousTurnId = this.activeTurnId;
+    this.activeTurnId = run.turnId;
+    try {
+      const result = await executeVaultTool(this.buildToolContext(void 0, true), run.name, run.args);
+      run.ok = result.ok;
+      run.content = this.clipToolContent(result.content);
+      run.finishedAt = Date.now();
+      cardEl.removeClass("is-running");
+      cardEl.addClass(result.ok ? "is-ok" : "is-error");
+      statusEl == null ? void 0 : statusEl.setText(result.ok ? "\u5B8C\u6210" : "\u5931\u8D25");
+      resultEl == null ? void 0 : resultEl.setText(result.content);
+      this.renderToolActionButtons(cardEl, run);
+      await this.persistCurrentSession();
+    } finally {
+      this.activeTurnId = previousTurnId;
+    }
   }
   async renderMarkdown(targetEl, content) {
     targetEl.empty();
@@ -2564,6 +2991,68 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     return new Promise((resolve) => {
       new CommandConfirmModal(this.app, command, description, resolve).open();
     });
+  }
+  confirmWrite(request) {
+    return new Promise((resolve) => {
+      new WriteConfirmModal(this.app, request, resolve).open();
+    });
+  }
+  recordUndo(snapshot) {
+    var _a;
+    const turnId = (_a = this.activeTurnId) != null ? _a : "manual";
+    this.undoSnapshots.push({
+      id: this.createTurnId(),
+      turnId,
+      action: snapshot.action,
+      target: snapshot.target,
+      path: snapshot.path,
+      beforeContent: snapshot.beforeContent,
+      afterContent: snapshot.afterContent,
+      createdAt: Date.now()
+    });
+    this.ensureUndoButton(turnId);
+  }
+  ensureUndoButton(turnId) {
+    const timelineEl = this.timelineEls.get(turnId);
+    if (!timelineEl || timelineEl.querySelector(".deepsidian-undo-turn")) {
+      return;
+    }
+    const headerEl = timelineEl.querySelector(".deepsidian-tool-timeline-header");
+    const undoButton = headerEl == null ? void 0 : headerEl.createEl("button", {
+      cls: "deepsidian-tool-action deepsidian-undo-turn",
+      text: "\u64A4\u9500\u672C\u8F6E\u5199\u5165"
+    });
+    undoButton == null ? void 0 : undoButton.addEventListener("click", () => {
+      void this.undoTurnWrites(turnId);
+    });
+  }
+  hasUndoableSnapshots(turnId) {
+    return this.undoSnapshots.some((snapshot) => snapshot.turnId === turnId && !snapshot.undoneAt);
+  }
+  async undoTurnWrites(turnId) {
+    const snapshots = this.undoSnapshots.filter((snapshot) => snapshot.turnId === turnId && !snapshot.undoneAt).sort((a, b) => b.createdAt - a.createdAt);
+    if (!snapshots.length) {
+      new import_obsidian4.Notice("\u672C\u8F6E\u6CA1\u6709\u53EF\u64A4\u9500\u7684\u5199\u5165\u3002");
+      return;
+    }
+    for (const snapshot of snapshots) {
+      const file = this.app.vault.getAbstractFileByPath(snapshot.path);
+      if (snapshot.beforeContent === null) {
+        if (file instanceof import_obsidian4.TFile) {
+          await this.app.vault.delete(file);
+        }
+      } else if (file instanceof import_obsidian4.TFile) {
+        await this.app.vault.modify(file, snapshot.beforeContent);
+      } else {
+        await this.plugin.ensureVaultFolderForPath(snapshot.path);
+        await this.app.vault.create(snapshot.path, snapshot.beforeContent);
+      }
+      snapshot.undoneAt = Date.now();
+    }
+    await this.persistCurrentSession();
+    new import_obsidian4.Notice(`\u5DF2\u64A4\u9500\u672C\u8F6E ${snapshots.length} \u4E2A\u5199\u5165\u3002`);
+    this.renderConversation();
+    this.renderSessionBar();
   }
   async summarizeText(text, prompt) {
     const result = await this.plugin.createClient().chat([
@@ -2654,6 +3143,75 @@ ${clipped}`;
     this.sessionCostUsd = 0;
     this.renderTokenMeta();
   }
+  formatSessionMemory() {
+    var _a;
+    const memory = (_a = this.currentSession) == null ? void 0 : _a.memory;
+    if (!memory) {
+      return null;
+    }
+    const parts = ["DeepSidian \u4F1A\u8BDD\u5DE5\u4F5C\u8BB0\u5FC6\uFF08\u538B\u7F29\u4E0A\u4E0B\u6587\uFF0C\u53EA\u4F5C\u4EFB\u52A1\u5EF6\u7EED\u53C2\u8003\uFF09\uFF1A"];
+    if (memory.currentGoal) {
+      parts.push(`\u5F53\u524D\u76EE\u6807\uFF1A${memory.currentGoal}`);
+    }
+    if (memory.files.length) {
+      parts.push(`\u76F8\u5173\u6587\u4EF6\uFF1A${memory.files.slice(-8).join("\uFF1B")}`);
+    }
+    if (memory.completed.length) {
+      parts.push(`\u5DF2\u5B8C\u6210\uFF1A${memory.completed.slice(-8).join("\uFF1B")}`);
+    }
+    if (memory.blockers.length) {
+      parts.push(`\u5931\u8D25/\u963B\u585E\uFF1A${memory.blockers.slice(-6).join("\uFF1B")}`);
+    }
+    if (memory.notes.length) {
+      parts.push(`\u5173\u952E\u7ED3\u8BBA\uFF1A${memory.notes.slice(-5).join("\uFF1B")}`);
+    }
+    return parts.length > 1 ? parts.join("\n") : null;
+  }
+  updateSessionMemory(userText, assistantText, turnId) {
+    var _a;
+    const now = Date.now();
+    const memory = (_a = this.currentSession.memory) != null ? _a : {
+      updatedAt: now,
+      completed: [],
+      blockers: [],
+      files: [],
+      notes: []
+    };
+    const runs = this.toolRuns.filter((run) => run.turnId === turnId);
+    const snapshots = this.undoSnapshots.filter((snapshot) => snapshot.turnId === turnId);
+    memory.updatedAt = now;
+    memory.currentGoal = userText.trim().replace(/\s+/g, " ").slice(0, 180);
+    memory.completed = this.compactMemoryList([
+      ...memory.completed,
+      ...runs.filter((run) => run.ok === true).map((run) => `${run.name}${this.describeToolTarget(run.args)}`)
+    ], 16);
+    memory.blockers = this.compactMemoryList([
+      ...memory.blockers,
+      ...runs.filter((run) => run.ok === false).map((run) => `${run.name}: ${run.content.replace(/\s+/g, " ").slice(0, 160)}`)
+    ], 12);
+    memory.files = this.compactMemoryList([
+      ...memory.files,
+      ...runs.flatMap((run) => this.extractToolPaths(run.args)),
+      ...snapshots.map((snapshot) => snapshot.path)
+    ], 16);
+    const note = assistantText.trim().replace(/\s+/g, " ").slice(0, 220);
+    if (note) {
+      memory.notes = this.compactMemoryList([...memory.notes, note], 10);
+    }
+    this.currentSession.memory = memory;
+  }
+  compactMemoryList(values, limit) {
+    const clean = values.map((value) => value.trim()).filter(Boolean);
+    return [...new Set(clean)].slice(-limit);
+  }
+  describeToolTarget(args) {
+    var _a, _b, _c, _d;
+    const target = (_d = (_c = (_b = (_a = args.path) != null ? _a : args.url) != null ? _b : args.source) != null ? _c : args.query) != null ? _d : "";
+    return typeof target === "string" && target ? `(${target.slice(0, 80)})` : "";
+  }
+  extractToolPaths(args) {
+    return ["path", "source", "filename"].map((key) => args[key]).filter((value) => typeof value === "string" && !/^https?:\/\//i.test(value));
+  }
   async persistCurrentSession(firstUserMessage) {
     if (!this.currentSession) {
       return;
@@ -2662,10 +3220,30 @@ ${clipped}`;
       this.currentSession.title = firstUserMessage.trim().replace(/\s+/g, " ").slice(0, 32) || "New Chat";
     }
     this.currentSession.messages = [...this.conversation];
+    this.currentSession.toolRuns = [...this.toolRuns];
+    this.currentSession.undoSnapshots = [...this.undoSnapshots];
     if (this.currentSession.messages.length) {
       await this.plugin.saveSession(this.currentSession);
       this.sessions = await this.plugin.listSessions();
     }
+  }
+  createTurnId() {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+  cloneToolArgs(args) {
+    try {
+      return JSON.parse(JSON.stringify(args));
+    } catch (e) {
+      return {
+        _unserializable: String(args)
+      };
+    }
+  }
+  clipToolContent(content) {
+    const maxLength = 4e3;
+    return content.length > maxLength ? `${content.slice(0, maxLength)}
+
+[\u5DE5\u5177\u7ED3\u679C\u8FC7\u957F\uFF0C\u5386\u53F2\u8BB0\u5F55\u5DF2\u622A\u65AD\u3002]` : content;
   }
 };
 
@@ -2723,7 +3301,17 @@ var DeepSidianPlugin = class extends import_obsidian5.Plugin {
     this.app.workspace.revealLeaf(leaf);
   }
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const loaded = await this.loadData();
+    const hasWritePermissions = Boolean(loaded == null ? void 0 : loaded.writePermissions);
+    const inheritedWritePermission = (loaded == null ? void 0 : loaded.enableVaultWrites) === true;
+    const writePermissions = hasWritePermissions ? Object.assign({}, DEFAULT_SETTINGS.writePermissions, loaded == null ? void 0 : loaded.writePermissions) : {
+      createNotes: inheritedWritePermission,
+      editNotes: inheritedWritePermission,
+      appendActiveNote: inheritedWritePermission,
+      insertAtCursor: inheritedWritePermission,
+      downloadAttachments: inheritedWritePermission
+    };
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded, { writePermissions });
   }
   async saveSettings() {
     await this.saveData(this.settings);
@@ -2739,7 +3327,16 @@ var DeepSidianPlugin = class extends import_obsidian5.Plugin {
       title,
       createdAt: now,
       updatedAt: now,
-      messages: []
+      messages: [],
+      toolRuns: [],
+      undoSnapshots: [],
+      memory: {
+        updatedAt: now,
+        completed: [],
+        blockers: [],
+        files: [],
+        notes: []
+      }
     };
   }
   async listSessions() {
@@ -2782,6 +3379,12 @@ var DeepSidianPlugin = class extends import_obsidian5.Plugin {
     const path = `.deepsidian/tasks/${id}.md`;
     await this.app.vault.adapter.write(path, markdown);
     return path;
+  }
+  async ensureVaultFolderForPath(path) {
+    const folder = path.split("/").slice(0, -1).join("/");
+    if (folder) {
+      await this.ensureAdapterFolder(folder);
+    }
   }
   getAssetUrl(path) {
     const pluginDir = this.manifest.dir;

@@ -14,6 +14,12 @@ DeepSidian is an Obsidian plugin prototype that connects a sidebar assistant to 
 - All sidebar requests run through the Agent tool loop, so tools are always available instead of being hidden behind keyword routing.
 - Tool-grounding guard for action-like requests: DeepSidian tracks required tool categories (`web` / `vault` / `write` / `image` / `bash`) and refuses to report completion when the required tool did not succeed.
 - Agent tool loop with collapsible tool cards and **parallel** tool execution per turn.
+- Tool execution traces are persisted with chat sessions and rendered as a per-turn execution timeline.
+- Failed tool cards expose recovery actions such as retrying the tool, copying the fetch-proxy start command, or opening settings.
+- Write actions show a before/after diff preview before modifying notes, the editor selection, or downloaded attachments.
+- Write permissions are split into create notes, edit notes, append active note, edit current selection/cursor, and download attachments.
+- Each write stores an undo snapshot, allowing the user to undo all writes from a turn.
+- Session memory keeps a compact summary of current goal, completed actions, blockers, related files, and key conclusions.
 - Optional V4 **thinking mode** (planning) and request **retry** on 429/5xx.
 - **Interruptible** runs: the send button becomes a stop button while a request is in flight.
 - Active-note **and editor-selection** context auto-injected; recent history trimmed for cost control.
@@ -72,6 +78,14 @@ For a production build:
 ```bash
 npm run build
 ```
+
+For the full local check (tool registry consistency, Agent contract eval, plugin build, and fetch-proxy typecheck):
+
+```bash
+npm run check
+```
+
+GitHub Actions can also package the Obsidian plugin (`main.js`, `manifest.json`, `styles.css`) through the `Build and Release` workflow. Trigger it manually or push a `v*` tag to publish a release zip.
 
 > The plugin loads the bundled `main.js`, not the TypeScript sources. After any change under `src/`, run `npm run build` (or keep `npm run dev` watching) to regenerate `main.js`, then reload the plugin in Obsidian.
 

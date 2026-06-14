@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "check:tools": "node scripts/check-tools.mjs",
+    "eval:agent": "node scripts/eval-agent-contracts.mjs",
     "typecheck:fetch-proxy": "npm --prefix fetch-proxy run typecheck",
-    "check": "npm run build && npm run typecheck:fetch-proxy"
+    "check": "npm run check:tools && npm run eval:agent && npm run build && npm run typecheck:fetch-proxy"
   },
   "keywords": [
     "obsidian",

@@ -1,6 +1,6 @@
 import { addIcon, Notice, Plugin, WorkspaceLeaf } from "obsidian";
 import { DeepSeekClient } from "./src/deepseekClient";
-import { DEFAULT_SETTINGS, DeepSidianSession, DeepSidianSettings, VIEW_TYPE_DEEPSIDIAN } from "./src/types";
+import { DEFAULT_SETTINGS, DeepSidianSession, DeepSidianSettings, DeepSidianWritePermissions, VIEW_TYPE_DEEPSIDIAN } from "./src/types";
 import { DeepSidianSettingTab } from "./src/settingsTab";
 import { DeepSidianView } from "./src/view";
 
@@ -66,7 +66,20 @@ export default class DeepSidianPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const loaded = await this.loadData() as Partial<DeepSidianSettings> | null;
+    const hasWritePermissions = Boolean(loaded?.writePermissions);
+    const inheritedWritePermission = loaded?.enableVaultWrites === true;
+    const writePermissions: DeepSidianWritePermissions = hasWritePermissions
+      ? Object.assign({}, DEFAULT_SETTINGS.writePermissions, loaded?.writePermissions)
+      : {
+        createNotes: inheritedWritePermission,
+        editNotes: inheritedWritePermission,
+        appendActiveNote: inheritedWritePermission,
+        insertAtCursor: inheritedWritePermission,
+        downloadAttachments: inheritedWritePermission
+      };
+
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded, { writePermissions });
   }
 
   async saveSettings() {
@@ -88,7 +101,16 @@ export default class DeepSidianPlugin extends Plugin {
       title,
       createdAt: now,
       updatedAt: now,
-      messages: []
+      messages: [],
+      toolRuns: [],
+      undoSnapshots: [],
+      memory: {
+        updatedAt: now,
+        completed: [],
+        blockers: [],
+        files: [],
+        notes: []
+      }
     };
   }
 
@@ -145,6 +167,14 @@ export default class DeepSidianPlugin extends Plugin {
     const path = `.deepsidian/tasks/${id}.md`;
     await this.app.vault.adapter.write(path, markdown);
     return path;
+  }
+
+  async ensureVaultFolderForPath(path: string): Promise<void> {
+    const folder = path.split("/").slice(0, -1).join("/");
+
+    if (folder) {
+      await this.ensureAdapterFolder(folder);
+    }
   }
 
   getAssetUrl(path: string) {

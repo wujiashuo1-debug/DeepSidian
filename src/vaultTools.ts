@@ -17,6 +17,22 @@ export interface ToolResult {
 
 export type AgentType = "explore" | "general" | "summarize";
 
+export interface WriteConfirmationRequest {
+  action: string;
+  target: string;
+  preview: string;
+  before?: string | null;
+  after?: string;
+}
+
+export interface UndoSnapshotInput {
+  action: string;
+  target: string;
+  path: string;
+  beforeContent: string | null;
+  afterContent: string;
+}
+
 export interface ToolContext {
   app: App;
   settings: DeepSidianSettings;
@@ -26,6 +42,10 @@ export interface ToolContext {
   dispatchAgent?: (task: string, agentType: AgentType) => Promise<string>;
   /** 针对长文本（如网页正文）按 prompt 出摘要，省 token。 */
   summarizeText?: (text: string, prompt: string) => Promise<string>;
+  /** 写入库或编辑器前的用户确认；返回 false 表示拒绝。 */
+  confirmWrite?: (request: WriteConfirmationRequest) => Promise<boolean>;
+  /** 写入成功后记录撤销快照。 */
+  recordUndo?: (snapshot: UndoSnapshotInput) => void;
   /** 桌面端执行 shell 命令前的用户确认；返回 false 表示拒绝。 */
   confirmCommand?: (command: string, description?: string) => Promise<boolean>;
 }
@@ -459,7 +479,7 @@ export async function executeVaultTool(
       case "append_to_active_note":
         return await appendToActiveNote(context, args);
       case "insert_at_cursor":
-        return insertAtCursor(context, args);
+        return await insertAtCursor(context, args);
       case "edit_file":
         return await editFile(context, args);
       case "web_fetch":
@@ -627,20 +647,18 @@ async function searchNotes({ app }: ToolContext, args: Record<string, unknown>):
 }
 
 async function writeFile(
-  { app, settings }: ToolContext,
+  { app, settings, confirmWrite, recordUndo }: ToolContext,
   args: Record<string, unknown>
 ): Promise<ToolResult> {
-  if (!settings.enableVaultWrites) {
-    return {
-      ok: false,
-      content: "写入工具未启用。请在 DeepSidian 侧边栏设置中打开“允许写入笔记”。"
-    };
-  }
-
   const path = getRequiredPath(args.path);
   const content = typeof args.content === "string" ? args.content : "";
   const overwrite = args.overwrite === true;
   const existing = app.vault.getAbstractFileByPath(path);
+  const permission = requireWritePermission(settings, existing ? "editNotes" : "createNotes");
+
+  if (permission) {
+    return permission;
+  }
 
   if (existing && !overwrite) {
     return {
@@ -656,6 +674,25 @@ async function writeFile(
     };
   }
 
+  const beforeContent = existing instanceof TFile ? await app.vault.cachedRead(existing) : null;
+
+  if (confirmWrite) {
+    const approved = await confirmWrite({
+      action: existing ? "覆盖文件" : "创建文件",
+      target: path,
+      preview: previewText(content),
+      before: beforeContent,
+      after: content
+    });
+
+    if (!approved) {
+      return {
+        ok: false,
+        content: "用户取消写入。"
+      };
+    }
+  }
+
   await ensureParentFolder(app, path);
 
   if (existing instanceof TFile) {
@@ -664,6 +701,14 @@ async function writeFile(
     await app.vault.create(path, content);
   }
 
+  recordUndo?.({
+    action: existing ? "覆盖文件" : "创建文件",
+    target: path,
+    path,
+    beforeContent,
+    afterContent: content
+  });
+
   return {
     ok: true,
     content: `${existing ? "已覆盖" : "已创建"}：${path}`
@@ -671,14 +716,13 @@ async function writeFile(
 }
 
 async function appendToActiveNote(
-  { app, settings }: ToolContext,
+  { app, settings, confirmWrite, recordUndo }: ToolContext,
   args: Record<string, unknown>
 ): Promise<ToolResult> {
-  if (!settings.enableVaultWrites) {
-    return {
-      ok: false,
-      content: "写入工具未启用。请在 DeepSidian 侧边栏设置中打开写入开关。"
-    };
+  const permission = requireWritePermission(settings, "appendActiveNote");
+
+  if (permission) {
+    return permission;
   }
 
   const file = app.workspace.getActiveFile();
@@ -701,7 +745,33 @@ async function appendToActiveNote(
 
   const current = await app.vault.cachedRead(file);
   const separator = current.endsWith("\n") ? "\n" : "\n\n";
-  await app.vault.modify(file, `${current}${separator}${content}`);
+  const afterContent = `${current}${separator}${content}`;
+
+  if (confirmWrite) {
+    const approved = await confirmWrite({
+      action: "追加到当前笔记",
+      target: file.path,
+      preview: previewText(content),
+      before: current,
+      after: afterContent
+    });
+
+    if (!approved) {
+      return {
+        ok: false,
+        content: "用户取消追加。"
+      };
+    }
+  }
+
+  await app.vault.modify(file, afterContent);
+  recordUndo?.({
+    action: "追加到当前笔记",
+    target: file.path,
+    path: file.path,
+    beforeContent: current,
+    afterContent
+  });
 
   return {
     ok: true,
@@ -709,15 +779,14 @@ async function appendToActiveNote(
   };
 }
 
-function insertAtCursor(
-  { app, settings }: ToolContext,
+async function insertAtCursor(
+  { app, settings, confirmWrite, recordUndo }: ToolContext,
   args: Record<string, unknown>
-): ToolResult {
-  if (!settings.enableVaultWrites) {
-    return {
-      ok: false,
-      content: "写入工具未启用。请在 DeepSidian 侧边栏设置中打开写入开关。"
-    };
+): Promise<ToolResult> {
+  const permission = requireWritePermission(settings, "insertAtCursor");
+
+  if (permission) {
+    return permission;
   }
 
   const view = app.workspace.getActiveViewOfType(MarkdownView);
@@ -737,7 +806,37 @@ function insertAtCursor(
     };
   }
 
+  const beforeContent = typeof view.editor.getValue === "function" ? view.editor.getValue() : view.editor.getSelection();
+
+  if (confirmWrite) {
+    const approved = await confirmWrite({
+      action: view.editor.getSelection() ? "替换当前选区" : "插入到当前光标",
+      target: view.file?.path ?? "当前编辑器",
+      preview: previewText(content),
+      before: view.editor.getSelection() || null,
+      after: content
+    });
+
+    if (!approved) {
+      return {
+        ok: false,
+        content: "用户取消插入。"
+      };
+    }
+  }
+
   view.editor.replaceSelection(content);
+  const afterContent = typeof view.editor.getValue === "function" ? view.editor.getValue() : content;
+
+  if (view.file) {
+    recordUndo?.({
+      action: "编辑当前编辑器",
+      target: view.file.path,
+      path: view.file.path,
+      beforeContent,
+      afterContent
+    });
+  }
 
   return {
     ok: true,
@@ -746,14 +845,13 @@ function insertAtCursor(
 }
 
 async function editFile(
-  { app, settings }: ToolContext,
+  { app, settings, confirmWrite, recordUndo }: ToolContext,
   args: Record<string, unknown>
 ): Promise<ToolResult> {
-  if (!settings.enableVaultWrites) {
-    return {
-      ok: false,
-      content: "编辑工具未启用。请在 DeepSidian 侧边栏设置中打开“允许写入笔记”。"
-    };
+  const permission = requireWritePermission(settings, "editNotes");
+
+  if (permission) {
+    return permission;
   }
 
   const path = getRequiredPath(args.path);
@@ -794,7 +892,33 @@ async function editFile(
     };
   }
 
-  await app.vault.modify(file, content.replace(oldString, newString));
+  const afterContent = content.replace(oldString, newString);
+
+  if (confirmWrite) {
+    const approved = await confirmWrite({
+      action: "编辑文件",
+      target: path,
+      preview: `替换前：\n${previewText(oldString)}\n\n替换后：\n${previewText(newString)}`,
+      before: content,
+      after: afterContent
+    });
+
+    if (!approved) {
+      return {
+        ok: false,
+        content: "用户取消编辑。"
+      };
+    }
+  }
+
+  await app.vault.modify(file, afterContent);
+  recordUndo?.({
+    action: "编辑文件",
+    target: path,
+    path,
+    beforeContent: content,
+    afterContent
+  });
 
   return {
     ok: true,
@@ -968,9 +1092,15 @@ async function readImage(
 }
 
 async function downloadImage(
-  { app }: ToolContext,
+  { app, settings, confirmWrite, recordUndo }: ToolContext,
   args: Record<string, unknown>
 ): Promise<ToolResult> {
+  const permission = requireWritePermission(settings, "downloadAttachments");
+
+  if (permission) {
+    return permission;
+  }
+
   const url = typeof args.url === "string" ? args.url.trim() : "";
 
   if (!/^https?:\/\//i.test(url)) {
@@ -999,7 +1129,29 @@ async function downloadImage(
     };
   }
 
+  if (confirmWrite) {
+    const approved = await confirmWrite({
+      action: "下载图片到附件",
+      target: path,
+      preview: `来源：${url}\n类型：${image.mime}\n大小：${image.bytes.byteLength} bytes`
+    });
+
+    if (!approved) {
+      return {
+        ok: false,
+        content: "用户取消下载。"
+      };
+    }
+  }
+
   await app.vault.createBinary(path, image.bytes);
+  recordUndo?.({
+    action: "下载图片到附件",
+    target: path,
+    path,
+    beforeContent: null,
+    afterContent: `[binary ${image.mime}, ${image.bytes.byteLength} bytes]`
+  });
 
   return {
     ok: true,
@@ -1170,6 +1322,44 @@ function truncateOutput(text: string): string {
   return text.length > MAX_TOOL_OUTPUT
     ? `${text.slice(0, MAX_TOOL_OUTPUT)}\n\n[输出过长，已截断。]`
     : text;
+}
+
+function previewText(text: string): string {
+  const maxLength = 6000;
+  return text.length > maxLength
+    ? `${text.slice(0, maxLength)}\n\n[预览过长，已截断。]`
+    : text;
+}
+
+type WritePermissionKey = keyof DeepSidianSettings["writePermissions"];
+
+const WRITE_PERMISSION_LABELS: Record<WritePermissionKey, string> = {
+  createNotes: "创建新笔记",
+  editNotes: "编辑已有笔记",
+  appendActiveNote: "追加到当前笔记",
+  insertAtCursor: "修改当前选区/光标",
+  downloadAttachments: "下载附件"
+};
+
+function requireWritePermission(
+  settings: DeepSidianSettings,
+  permission: WritePermissionKey
+): ToolResult | null {
+  if (!settings.enableVaultWrites) {
+    return {
+      ok: false,
+      content: "写入工具未启用。请在 DeepSidian 侧边栏设置中打开“写入”总开关。"
+    };
+  }
+
+  if (!settings.writePermissions?.[permission]) {
+    return {
+      ok: false,
+      content: `写入权限不足：未允许“${WRITE_PERMISSION_LABELS[permission]}”。请在 DeepSidian 设置中开启对应权限。`
+    };
+  }
+
+  return null;
 }
 
 async function ensureParentFolder(app: App, path: string) {
