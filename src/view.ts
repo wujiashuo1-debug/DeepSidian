@@ -25,36 +25,27 @@ const CONTEXT_BUDGET_TOKENS = 60000;
 const COMPACT_AT_RATIO = 0.85;
 const KEEP_RECENT_MESSAGES = 8;
 
-const SYSTEM_PROMPT = `你是 DeepSidian，运行在 Obsidian 内的 DeepSeek 助手。
-你要用中文优先回答，语气简洁、可靠、像一个熟悉用户知识库的协作伙伴。
-你是工具型 Agent，不是单纯聊天框。遇到当前笔记、选中内容、库内资料、文件路径、URL、整理/改写/写入请求时，要主动调用合适工具。
-可用能力包括：读取当前笔记、读取选区、列文件、搜笔记、读文件、打开笔记、抓网页（需用户给出 URL）、看图、写 TODO、创建/编辑/追加/插入笔记、派发子任务、执行命令。
-你没有联网搜索能力：如果用户要"找资料/搜新闻"但没给具体链接，要说明你无法联网搜索、可基于已有知识回答，并请对方提供 URL 让你用 web_fetch 抓取。
-如果用户给图片路径或图片 URL，调用 read_image；如果用户要求保存外链图片，调用 download_image。
-只有用户开启写入权限时，才可以创建、编辑、追加或插入笔记；写入前要尽量说明将做什么。
-如果提供了当前笔记上下文，优先基于上下文回答；如果上下文不足，要主动调用搜索、读取或网页工具补足。
+const SYSTEM_PROMPT = `你是 DeepSidian，住在用户 Obsidian 知识库里的协作伙伴——既能聊，也能读写笔记、查库、抓网页、看图、执行命令、派工具干活。中文优先，语气自然不机械；简单的问题就直接、简短地答，别长篇大论，复杂的事才展开。
 
-任务编排原则：
-- 遇到需要多步骤、跨多个文件或先调研后整理的复杂请求，先用 todo_write 写一个有序清单，然后逐项推进，每完成一项就用 todo_write 更新状态；所有项标记为 done 之前不要结束任务。
-- 当某个子问题需要翻阅大量笔记/网页、或几个子问题彼此独立时，用 dispatch_agent 派发子任务（explore 只读调研、summarize 长文摘要、general 可写执行），只取它返回的结论，保持主线干净。
-- 工具失败时阅读错误信息并自我纠正后重试，不要直接放弃。
+怎么思考（内化即可，不用念出来）：
+- 先分清这是关于用户自己的世界（他的笔记、项目、术语、决定）还是通用知识。前者默认先查库再说（search_notes / read_file / 当前笔记），别凭印象编；后者直接答。
+- 用到库内或网页内容时，带上出处（笔记路径、[[双链]] 或来源 URL），方便用户点回去核对；用的是你自己的常识也说一声——别让没核实的话冒充用户的笔记。
+- 顺手看到相关的笔记，用 [[双链]] 点出来帮用户把知识连起来——但只在真有帮助时，别硬塞、别刷屏。
 
-真实性与执行边界：
-- 不要把计划、意图或下一步说成已经完成；只有实际调用工具并收到 ok:true，才可以说“已读取 / 已搜索 / 已抓取 / 已写入 / 已完成”。
-- 当用户给了 URL、明确指向库内笔记/文件、或要求写入/执行命令时，必须先调用对应工具，不能只凭常识或编造内容冒充工具结果。
-- 但如果只是一般知识或解释类问题（没有具体 URL、不涉及库内某个对象），就正常直接回答，不要强行调用工具，也不要因为"没调工具"而拒绝回答。
-- 如果 fetch-proxy 未启动、缺少 URL、写入权限未开启或命令执行不可用，要直接说明“尚未执行”和具体原因，并给出可行下一步。
-- 如果用户询问进度，只同步真实状态：已调用哪些工具、哪些成功/失败、还差什么；不要用“马上”“快好了”掩盖未执行。`;
+写入要当心（你在改用户长期积累的笔记，不是草稿纸）：
+- 只在用户明确要写时动手，写前一句话说清改哪儿、改成什么。
+- 顺着已有的结构和用户的文风改，动最小范围，别擅自重组或改写风格；新建前先搜有没有重复，沿用用户的文件夹/标签习惯。
+- 意图模糊又要写入时，先问一句再动手，别猜着写；纯读取/回答则不必反复确认，给个合理默认即可。
+- 只有工具真正成功了才说“已写入 / 已抓取 / 已完成”；做不到（缺 URL、抓取代理没起、没开写入权限等）就直说“还没做 + 原因 + 下一步”，绝不把打算说成做完、不编造结果。
+
+你没有联网搜索：用户只给主题、没给链接时，说明你搜不了、可基于已有知识回答，并请他给 URL 让你用 web_fetch 抓取。
+
+深浅随任务走：记一笔、找某篇、简单问答就直给；跨多篇的综合、整理、搭结构才值得多步深想（先检索铺料 → 再归纳 → 再下结论），这种时候用 todo_write 列清单逐项推进、全部完成前不收尾，子问题彼此独立或要翻大量资料就用 dispatch_agent 派子任务、只取它的结论。`;
 
 const SUBAGENT_PROMPTS: Record<AgentType, string> = {
-  explore: `你是 DeepSidian 的只读调研子 Agent。你只能读取、搜索、列举库内笔记并抓取网页，不能写入。
-高效地检索定位信息，完成后用中文给出**结构化、精炼的结论**（关键发现 + 涉及的文件路径/链接），不要堆砌原文。
-只有实际调用工具并成功后，才可以声称已读取、已搜索或已抓取；工具不可用或失败时要明确说明尚未完成。`,
-  summarize: `你是 DeepSidian 的只读摘要子 Agent。读取指定笔记或文件后，用中文产出忠实、紧凑的摘要，保留关键事实、数据与结论，去掉冗余。
-只有实际读取成功后，才可以声称已完成摘要；读取失败或路径缺失时要明确说明。`,
-  general: `你是 DeepSidian 的通用执行子 Agent，拥有完整工具（含写入，受用户全局写入开关约束）。
-独立完成交给你的任务，必要时读写库内文件，完成后用中文简要汇报你做了什么、产出在哪里。
-不要把计划或尝试说成完成；只有工具返回成功后，才可以报告已写入、已修改或已完成。`
+  explore: `你是 DeepSidian 的只读调研子 Agent：只能读、搜、列举库内笔记和抓网页，不能写。高效定位信息，完成后用中文给出结构化、精炼的结论（关键发现 + 涉及的笔记路径/链接），不堆原文。只有工具真正成功才声称读到/搜到/抓到，否则直说没拿到。`,
+  summarize: `你是 DeepSidian 的只读摘要子 Agent：读取指定笔记/文件后，产出忠实、紧凑的中文摘要，保留关键事实、数据与结论，去冗余，尽量留住用户原文里的要点与措辞。读不到就直说，别编。`,
+  general: `你是 DeepSidian 的通用执行子 Agent，拥有完整工具（含写入，受权限约束）。独立完成任务，写入时顺着已有结构改、动最小范围，完成后用中文简要汇报做了什么、产出在哪。只有工具真正成功才报告已完成。`
 };
 
 interface ToolCardHandle {
@@ -798,17 +789,9 @@ export class DeepSidianView extends ItemView {
     const config = THINKING_CONFIG[this.plugin.settings.thinkingLevel];
     const requiredGroups = this.inferRequiredToolGroups(userText);
 
-    // 流式渲染：节流 ~80ms + 串行化，避免并发渲染同一个气泡。
-    let lastRender = 0;
-    let latest = "";
-    let renderChain: Promise<void> = Promise.resolve();
-    const flushStream = () => {
-      renderChain = renderChain
-        .then(() => this.renderMarkdown(pendingEl, latest))
-        .then(() => {
-          this.transcriptEl.scrollTo({ top: this.transcriptEl.scrollHeight });
-        });
-    };
+    // 打字机式平滑流式：网络按突发到达（一次给好几个词），但显示按"时间匀速"推进，
+    // 把每个突发摊开成连续字流，跟网络节奏解耦 —— 避免"几个词一起蹦、一帧一帧"的卡顿。
+    const typewriter = this.createTypewriter(pendingEl);
 
     const loop = new AgentLoop({
       client: this.plugin.createClient(),
@@ -825,24 +808,120 @@ export class DeepSidianView extends ItemView {
         onToolStart: (toolCall, args) => this.startToolCard(toolCall, args),
         onToolFinish: (card, ok, content) => this.finishToolCard(card as ToolCardHandle, ok, content),
         onTodoUpdate: (markdown) => this.renderTodoPanel(markdown),
-        onReflect: (round, total) => this.renderThinkingIndicator(pendingEl, `第 ${round}/${total} 轮反思`),
+        onReflect: (round, total) => {
+          typewriter.reset();
+          this.renderThinkingIndicator(pendingEl, `第 ${round}/${total} 轮反思`);
+        },
         onAssistantDelta: (content) => {
           if (!this.turnFirstTokenAt) {
             this.turnFirstTokenAt = Date.now();
           }
-          latest = content;
-          const now = Date.now();
-          if (now - lastRender >= 80) {
-            lastRender = now;
-            flushStream();
-          }
+          typewriter.push(content);
         }
       }
     });
 
-    const result = await loop.run(await this.buildMessages(userText));
-    await renderChain; // 等最后一帧流式渲染落地，避免与 sendMessage 的最终渲染打架
-    return result;
+    try {
+      const result = await loop.run(await this.buildMessages(userText));
+      await typewriter.finish(); // 等打字机把剩余字符匀速吐完，再交给 sendMessage 做最终渲染
+      return result;
+    } finally {
+      typewriter.stop(); // 出错/中断时也停掉 rAF 循环，避免泄漏
+    }
+  }
+
+  /**
+   * 打字机：把"目标全文"按时间匀速揭示到气泡里，渲染 Markdown。
+   * - push(fullSoFar)：网络每来一段就更新目标全文（突发不直接上屏，由帧循环匀速追上）。
+   * - reset()：反思等场景从头开始。
+   * - finish()：标记流结束并等待剩余字符吐完。
+   */
+  private createTypewriter(targetEl: HTMLElement) {
+    let target = "";
+    let shown = 0;
+    let done = false;
+    let rendering = false;
+    let lastRenderAt = 0;
+    let lastFrame = 0;
+    let rafId: number | null = null;
+    let resolveFinish: (() => void) | null = null;
+
+    const render = async () => {
+      if (rendering) {
+        return;
+      }
+      rendering = true;
+      lastRenderAt = performance.now();
+      try {
+        await this.renderMarkdown(targetEl, target.slice(0, shown));
+        this.transcriptEl.scrollTo({ top: this.transcriptEl.scrollHeight });
+      } finally {
+        rendering = false;
+      }
+    };
+
+    const frame = (now: number) => {
+      const dt = lastFrame ? now - lastFrame : 16;
+      lastFrame = now;
+
+      const remaining = target.length - shown;
+      if (remaining > 0) {
+        // 匀速基线 + 落后越多越快追赶；始终贴着网络又不突跳。
+        const cps = Math.max(260, remaining * 12);
+        shown = Math.min(target.length, shown + Math.max(1, Math.ceil((cps * dt) / 1000)));
+        // 渲染上限 ~30fps，控制 Markdown 重渲染开销；揭示进度仍按时间走，所以观感平滑。
+        if (now - lastRenderAt >= 32) {
+          void render();
+        }
+      }
+
+      if (done && shown >= target.length) {
+        if (rendering) {
+          // 等这帧的渲染落地再结束，避免和 sendMessage 的最终渲染并发写同一个气泡。
+          rafId = window.requestAnimationFrame(frame);
+          return;
+        }
+        rafId = null;
+        const resolve = resolveFinish;
+        resolveFinish = null;
+        resolve?.();
+        return;
+      }
+
+      rafId = window.requestAnimationFrame(frame);
+    };
+
+    return {
+      push: (fullSoFar: string) => {
+        target = fullSoFar;
+        if (rafId === null && !done) {
+          lastFrame = 0;
+          rafId = window.requestAnimationFrame(frame);
+        }
+      },
+      reset: () => {
+        target = "";
+        shown = 0;
+      },
+      finish: async () => {
+        done = true;
+        if (rafId !== null) {
+          await new Promise<void>((resolve) => {
+            resolveFinish = resolve;
+          });
+        }
+      },
+      stop: () => {
+        done = true;
+        if (rafId !== null) {
+          window.cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        const resolve = resolveFinish;
+        resolveFinish = null;
+        resolve?.();
+      }
+    };
   }
 
   /**
