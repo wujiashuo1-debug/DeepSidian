@@ -113,6 +113,15 @@ export interface DeepSidianSession {
   /** 滚动压缩摘要：覆盖 conversation 前 summarizedCount 条消息的中文要点。 */
   summary?: string;
   summarizedCount?: number;
+  /** 随会话持久化的累计用量与费用，切会话/重开插件都跟着会话走，不再丢失。 */
+  usage?: DeepSidianSessionUsage;
+}
+
+export interface DeepSidianSessionUsage {
+  promptTokens: number;
+  completionTokens: number;
+  costUsd: number;
+  contextTokens: number;
 }
 
 export interface DeepSidianToolRun {

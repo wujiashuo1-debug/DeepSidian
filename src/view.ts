@@ -1,4 +1,4 @@
-import { App, ItemView, MarkdownRenderer, MarkdownView, Modal, Notice, setIcon, TFile, WorkspaceLeaf } from "obsidian";
+import { App, ItemView, MarkdownRenderer, MarkdownView, Menu, Modal, Notice, setIcon, TFile, WorkspaceLeaf } from "obsidian";
 import type DeepSidianPlugin from "../main";
 import {
   DeepSeekMessage,
@@ -281,6 +281,7 @@ export class DeepSidianView extends ItemView {
     this.toolRuns = [...(this.currentSession.toolRuns ?? [])];
     this.undoSnapshots = [...(this.currentSession.undoSnapshots ?? [])];
     this.render();
+    this.loadSessionUsage(this.currentSession);
   }
 
   async onClose() {
@@ -351,25 +352,39 @@ export class DeepSidianView extends ItemView {
     const composerFooterEl = inputShellEl.createDiv({ cls: "deepsidian-composer-footer" });
     const footerLeftEl = composerFooterEl.createDiv({ cls: "deepsidian-composer-meta" });
 
-    // 模型切换：flash / pro
+    // 模型切换：点击弹出菜单选择 flash / pro
     const modelPill = footerLeftEl.createEl("button", {
       cls: "deepsidian-pill deepsidian-model-pill",
-      attr: { type: "button", title: "切换模型（flash / pro）" }
+      attr: { type: "button", title: "选择模型" }
     });
     const renderModelPill = () => modelPill.setText(this.plugin.settings.model.replace("deepseek-v4-", ""));
     renderModelPill();
-    modelPill.addEventListener("click", async () => {
-      const index = MODEL_OPTIONS.indexOf(this.plugin.settings.model as (typeof MODEL_OPTIONS)[number]);
-      this.plugin.settings.model = MODEL_OPTIONS[(index + 1) % MODEL_OPTIONS.length];
-      await this.plugin.saveSettings();
-      renderModelPill();
-      this.renderTokenMeta();
+    modelPill.addEventListener("click", (event) => {
+      const menu = new Menu();
+      const hints: Record<string, string> = {
+        "deepseek-v4-flash": "便宜快，日常首选",
+        "deepseek-v4-pro": "更强，复杂任务"
+      };
+      for (const model of MODEL_OPTIONS) {
+        menu.addItem((item) => {
+          item
+            .setTitle(`${model.replace("deepseek-v4-", "")} · ${hints[model] ?? ""}`)
+            .setChecked(this.plugin.settings.model === model)
+            .onClick(async () => {
+              this.plugin.settings.model = model;
+              await this.plugin.saveSettings();
+              renderModelPill();
+              this.renderTokenMeta();
+            });
+        });
+      }
+      menu.showAtMouseEvent(event);
     });
 
-    // 思考深度：Low / Med / High / Max
+    // 思考深度：点击弹出菜单选择 Low / Med / High / Max
     const thinkingPill = footerLeftEl.createEl("button", {
       cls: "deepsidian-pill deepsidian-thinking-pill",
-      attr: { type: "button", title: "思考深度（Low / Med / High / Max）" }
+      attr: { type: "button", title: "选择思考深度" }
     });
     const renderThinkingPill = () => {
       thinkingPill.empty();
@@ -378,11 +393,23 @@ export class DeepSidianView extends ItemView {
       thinkingPill.toggleClass("is-on", thinkingEnabled(this.plugin.settings.thinkingLevel));
     };
     renderThinkingPill();
-    thinkingPill.addEventListener("click", async () => {
-      const index = THINKING_LEVELS.indexOf(this.plugin.settings.thinkingLevel);
-      this.plugin.settings.thinkingLevel = THINKING_LEVELS[(index + 1) % THINKING_LEVELS.length];
-      await this.plugin.saveSettings();
-      renderThinkingPill();
+    thinkingPill.addEventListener("click", (event) => {
+      const menu = new Menu();
+      for (const level of THINKING_LEVELS) {
+        const rounds = THINKING_CONFIG[level].reflectionRounds;
+        const hint = rounds === 0 ? "不思考，最快" : `思考 + ${rounds} 轮自我反思`;
+        menu.addItem((item) => {
+          item
+            .setTitle(`${THINKING_LEVEL_LABELS[level]} · ${hint}`)
+            .setChecked(this.plugin.settings.thinkingLevel === level)
+            .onClick(async () => {
+              this.plugin.settings.thinkingLevel = level;
+              await this.plugin.saveSettings();
+              renderThinkingPill();
+            });
+        });
+      }
+      menu.showAtMouseEvent(event);
     });
 
     // token 计费
@@ -458,8 +485,11 @@ export class DeepSidianView extends ItemView {
   private renderSessionBar() {
     this.sessionBarEl.empty();
 
-    const recentSessions = [this.currentSession, ...this.sessions.filter((session) => session.id !== this.currentSession.id)]
-      .slice(0, 3);
+    // 固定按列表顺序显示最近 3 个会话：当前会话只高亮、不再被钉到 1 号位，所以点哪个就稳稳切到哪个、号码不乱跳。
+    const shown = this.sessions.slice(0, 3);
+    const recentSessions = shown.some((session) => session.id === this.currentSession.id)
+      ? shown
+      : [this.currentSession, ...shown].slice(0, 3);
 
     recentSessions.forEach((session, index) => {
       const button = this.sessionBarEl.createEl("button", {
@@ -515,7 +545,12 @@ export class DeepSidianView extends ItemView {
   }
 
   private async openSession(sessionId: string) {
-    await this.persistCurrentSession();
+    if (sessionId === this.currentSession?.id) {
+      return; // 已经在这个会话里，点了不动，避免无谓重渲染
+    }
+
+    // 保存上一个会话，但切换时不重排列表 —— 号码保持稳定，不会"点一下就跳位"。
+    await this.persistCurrentSession(undefined, false);
 
     const session = await this.plugin.loadSession(sessionId);
 
@@ -528,9 +563,8 @@ export class DeepSidianView extends ItemView {
     this.conversation = [...session.messages];
     this.toolRuns = [...(session.toolRuns ?? [])];
     this.undoSnapshots = [...(session.undoSnapshots ?? [])];
-    this.sessions = await this.plugin.listSessions();
     this.clearTodoPanel();
-    this.resetSessionUsage();
+    this.loadSessionUsage(session);
     this.renderConversation();
     this.renderSessionBar();
   }
@@ -1447,6 +1481,31 @@ export class DeepSidianView extends ItemView {
     const price = MODEL_PRICING[this.plugin.settings.model] ?? MODEL_PRICING["deepseek-v4-flash"];
     this.sessionCostUsd += (prompt / 1_000_000) * price.input + (completion / 1_000_000) * price.output;
 
+    this.persistSessionUsage();
+    this.renderTokenMeta();
+  }
+
+  /** 把累计用量写进当前 session 对象，随 persistCurrentSession 一起落盘。 */
+  private persistSessionUsage() {
+    if (!this.currentSession) {
+      return;
+    }
+
+    this.currentSession.usage = {
+      promptTokens: this.sessionPromptTokens,
+      completionTokens: this.sessionCompletionTokens,
+      costUsd: this.sessionCostUsd,
+      contextTokens: this.currentContextTokens
+    };
+  }
+
+  /** 切换/打开会话时，从该会话恢复累计用量（没有则为 0）。 */
+  private loadSessionUsage(session: DeepSidianSession) {
+    const usage = session.usage;
+    this.sessionPromptTokens = usage?.promptTokens ?? 0;
+    this.sessionCompletionTokens = usage?.completionTokens ?? 0;
+    this.sessionCostUsd = usage?.costUsd ?? 0;
+    this.currentContextTokens = usage?.contextTokens ?? 0;
     this.renderTokenMeta();
   }
 
@@ -1654,7 +1713,7 @@ export class DeepSidianView extends ItemView {
       .filter((value): value is string => typeof value === "string" && !/^https?:\/\//i.test(value));
   }
 
-  private async persistCurrentSession(firstUserMessage?: string) {
+  private async persistCurrentSession(firstUserMessage?: string, refreshList = true) {
     if (!this.currentSession) {
       return;
     }
@@ -1669,7 +1728,9 @@ export class DeepSidianView extends ItemView {
 
     if (this.currentSession.messages.length) {
       await this.plugin.saveSession(this.currentSession);
-      this.sessions = await this.plugin.listSessions();
+      if (refreshList) {
+        this.sessions = await this.plugin.listSessions();
+      }
     }
   }
 

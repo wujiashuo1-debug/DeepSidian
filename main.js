@@ -2686,6 +2686,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     this.toolRuns = [...(_b = this.currentSession.toolRuns) != null ? _b : []];
     this.undoSnapshots = [...(_c = this.currentSession.undoSnapshots) != null ? _c : []];
     this.render();
+    this.loadSessionUsage(this.currentSession);
   }
   async onClose() {
     await this.persistCurrentSession();
@@ -2747,20 +2748,32 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     const footerLeftEl = composerFooterEl.createDiv({ cls: "deepsidian-composer-meta" });
     const modelPill = footerLeftEl.createEl("button", {
       cls: "deepsidian-pill deepsidian-model-pill",
-      attr: { type: "button", title: "\u5207\u6362\u6A21\u578B\uFF08flash / pro\uFF09" }
+      attr: { type: "button", title: "\u9009\u62E9\u6A21\u578B" }
     });
     const renderModelPill = () => modelPill.setText(this.plugin.settings.model.replace("deepseek-v4-", ""));
     renderModelPill();
-    modelPill.addEventListener("click", async () => {
-      const index = MODEL_OPTIONS.indexOf(this.plugin.settings.model);
-      this.plugin.settings.model = MODEL_OPTIONS[(index + 1) % MODEL_OPTIONS.length];
-      await this.plugin.saveSettings();
-      renderModelPill();
-      this.renderTokenMeta();
+    modelPill.addEventListener("click", (event) => {
+      const menu = new import_obsidian4.Menu();
+      const hints = {
+        "deepseek-v4-flash": "\u4FBF\u5B9C\u5FEB\uFF0C\u65E5\u5E38\u9996\u9009",
+        "deepseek-v4-pro": "\u66F4\u5F3A\uFF0C\u590D\u6742\u4EFB\u52A1"
+      };
+      for (const model of MODEL_OPTIONS) {
+        menu.addItem((item) => {
+          var _a;
+          item.setTitle(`${model.replace("deepseek-v4-", "")} \xB7 ${(_a = hints[model]) != null ? _a : ""}`).setChecked(this.plugin.settings.model === model).onClick(async () => {
+            this.plugin.settings.model = model;
+            await this.plugin.saveSettings();
+            renderModelPill();
+            this.renderTokenMeta();
+          });
+        });
+      }
+      menu.showAtMouseEvent(event);
     });
     const thinkingPill = footerLeftEl.createEl("button", {
       cls: "deepsidian-pill deepsidian-thinking-pill",
-      attr: { type: "button", title: "\u601D\u8003\u6DF1\u5EA6\uFF08Low / Med / High / Max\uFF09" }
+      attr: { type: "button", title: "\u9009\u62E9\u601D\u8003\u6DF1\u5EA6" }
     });
     const renderThinkingPill = () => {
       thinkingPill.empty();
@@ -2769,11 +2782,20 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       thinkingPill.toggleClass("is-on", thinkingEnabled(this.plugin.settings.thinkingLevel));
     };
     renderThinkingPill();
-    thinkingPill.addEventListener("click", async () => {
-      const index = THINKING_LEVELS.indexOf(this.plugin.settings.thinkingLevel);
-      this.plugin.settings.thinkingLevel = THINKING_LEVELS[(index + 1) % THINKING_LEVELS.length];
-      await this.plugin.saveSettings();
-      renderThinkingPill();
+    thinkingPill.addEventListener("click", (event) => {
+      const menu = new import_obsidian4.Menu();
+      for (const level of THINKING_LEVELS) {
+        const rounds = THINKING_CONFIG[level].reflectionRounds;
+        const hint = rounds === 0 ? "\u4E0D\u601D\u8003\uFF0C\u6700\u5FEB" : `\u601D\u8003 + ${rounds} \u8F6E\u81EA\u6211\u53CD\u601D`;
+        menu.addItem((item) => {
+          item.setTitle(`${THINKING_LEVEL_LABELS[level]} \xB7 ${hint}`).setChecked(this.plugin.settings.thinkingLevel === level).onClick(async () => {
+            this.plugin.settings.thinkingLevel = level;
+            await this.plugin.saveSettings();
+            renderThinkingPill();
+          });
+        });
+      }
+      menu.showAtMouseEvent(event);
     });
     this.tokenMetaEl = footerLeftEl.createSpan({ cls: "deepsidian-token-meta" });
     this.renderTokenMeta();
@@ -2831,7 +2853,8 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
   }
   renderSessionBar() {
     this.sessionBarEl.empty();
-    const recentSessions = [this.currentSession, ...this.sessions.filter((session) => session.id !== this.currentSession.id)].slice(0, 3);
+    const shown = this.sessions.slice(0, 3);
+    const recentSessions = shown.some((session) => session.id === this.currentSession.id) ? shown : [this.currentSession, ...shown].slice(0, 3);
     recentSessions.forEach((session, index) => {
       const button = this.sessionBarEl.createEl("button", {
         cls: session.id === this.currentSession.id ? "deepsidian-session-button is-active" : "deepsidian-session-button",
@@ -2880,8 +2903,11 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     this.renderSessionBar();
   }
   async openSession(sessionId) {
-    var _a, _b;
-    await this.persistCurrentSession();
+    var _a, _b, _c;
+    if (sessionId === ((_a = this.currentSession) == null ? void 0 : _a.id)) {
+      return;
+    }
+    await this.persistCurrentSession(void 0, false);
     const session = await this.plugin.loadSession(sessionId);
     if (!session) {
       new import_obsidian4.Notice("\u6CA1\u6709\u627E\u5230\u8FD9\u4E2A\u4F1A\u8BDD\u3002");
@@ -2889,11 +2915,10 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     }
     this.currentSession = session;
     this.conversation = [...session.messages];
-    this.toolRuns = [...(_a = session.toolRuns) != null ? _a : []];
-    this.undoSnapshots = [...(_b = session.undoSnapshots) != null ? _b : []];
-    this.sessions = await this.plugin.listSessions();
+    this.toolRuns = [...(_b = session.toolRuns) != null ? _b : []];
+    this.undoSnapshots = [...(_c = session.undoSnapshots) != null ? _c : []];
     this.clearTodoPanel();
-    this.resetSessionUsage();
+    this.loadSessionUsage(session);
     this.renderConversation();
     this.renderSessionBar();
   }
@@ -3654,6 +3679,29 @@ ${clipped}`;
     this.sessionCompletionTokens += completion;
     const price = (_c = MODEL_PRICING[this.plugin.settings.model]) != null ? _c : MODEL_PRICING["deepseek-v4-flash"];
     this.sessionCostUsd += prompt / 1e6 * price.input + completion / 1e6 * price.output;
+    this.persistSessionUsage();
+    this.renderTokenMeta();
+  }
+  /** 把累计用量写进当前 session 对象，随 persistCurrentSession 一起落盘。 */
+  persistSessionUsage() {
+    if (!this.currentSession) {
+      return;
+    }
+    this.currentSession.usage = {
+      promptTokens: this.sessionPromptTokens,
+      completionTokens: this.sessionCompletionTokens,
+      costUsd: this.sessionCostUsd,
+      contextTokens: this.currentContextTokens
+    };
+  }
+  /** 切换/打开会话时，从该会话恢复累计用量（没有则为 0）。 */
+  loadSessionUsage(session) {
+    var _a, _b, _c, _d;
+    const usage = session.usage;
+    this.sessionPromptTokens = (_a = usage == null ? void 0 : usage.promptTokens) != null ? _a : 0;
+    this.sessionCompletionTokens = (_b = usage == null ? void 0 : usage.completionTokens) != null ? _b : 0;
+    this.sessionCostUsd = (_c = usage == null ? void 0 : usage.costUsd) != null ? _c : 0;
+    this.currentContextTokens = (_d = usage == null ? void 0 : usage.contextTokens) != null ? _d : 0;
     this.renderTokenMeta();
   }
   renderTokenMeta() {
@@ -3827,7 +3875,7 @@ ${transcript}`
   extractToolPaths(args) {
     return ["path", "source", "filename"].map((key) => args[key]).filter((value) => typeof value === "string" && !/^https?:\/\//i.test(value));
   }
-  async persistCurrentSession(firstUserMessage) {
+  async persistCurrentSession(firstUserMessage, refreshList = true) {
     if (!this.currentSession) {
       return;
     }
@@ -3839,7 +3887,9 @@ ${transcript}`
     this.currentSession.undoSnapshots = [...this.undoSnapshots];
     if (this.currentSession.messages.length) {
       await this.plugin.saveSession(this.currentSession);
-      this.sessions = await this.plugin.listSessions();
+      if (refreshList) {
+        this.sessions = await this.plugin.listSessions();
+      }
     }
   }
   createTurnId() {
