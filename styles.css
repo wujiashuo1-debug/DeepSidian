@@ -36,17 +36,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  overflow: hidden;
-  border-radius: 6px;
-  background: var(--deepsidian-blue);
+  width: 24px;
+  height: 24px;
 }
 
 .deepsidian-mark img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .deepsidian-actions {
@@ -164,12 +161,12 @@
 }
 
 .deepsidian-empty-art {
-  width: 52px;
-  height: 52px;
-  margin-bottom: 4px;
-  border-radius: 14px;
-  opacity: 0.92;
-  box-shadow: 0 10px 28px rgba(77, 107, 254, 0.16);
+  width: 72px;
+  height: 72px;
+  margin-bottom: 8px;
+  object-fit: contain;
+  /* 透明鲸鱼直接浮在面板上：用 drop-shadow 跟随形状，而不是方块卡片底。 */
+  filter: drop-shadow(0 6px 12px rgba(77, 107, 254, 0.22));
 }
 
 .deepsidian-empty-title {
@@ -256,6 +253,38 @@
 
 .deepsidian-bubble.is-streaming {
   color: var(--text-muted);
+}
+
+/* Markdown 表格：之前没样式，渲染成一堆飘着的列。给它加边框/表头/内边距，并在窄侧栏里可横向滚动。 */
+.deepsidian-bubble table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.deepsidian-bubble th,
+.deepsidian-bubble td {
+  border: 1px solid var(--background-modifier-border);
+  padding: 5px 9px;
+  text-align: left;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.deepsidian-bubble th {
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.deepsidian-bubble tbody tr:nth-child(even) {
+  background: rgba(127, 127, 127, 0.04);
 }
 
 /* 思考中：弹跳的小鲸鱼 + 实时计时 */

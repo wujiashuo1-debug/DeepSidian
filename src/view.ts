@@ -344,7 +344,7 @@ export class DeepSidianView extends ItemView {
     const logoWrapEl = titleEl.createSpan({ cls: "deepsidian-mark" });
     logoWrapEl.createEl("img", {
       attr: {
-        src: this.plugin.getAssetUrl("assets/deepsidian-orb-512.png"),
+        src: this.plugin.getAssetUrl("assets/whale.png"),
         alt: ""
       }
     });
@@ -651,7 +651,7 @@ export class DeepSidianView extends ItemView {
     this.emptyStateEl.createEl("img", {
       cls: "deepsidian-empty-art",
       attr: {
-        src: this.plugin.getAssetUrl("assets/deepsidian-orb-512.png"),
+        src: this.plugin.getAssetUrl("assets/whale.png"),
         alt: ""
       }
     });

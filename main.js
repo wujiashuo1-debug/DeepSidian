@@ -2892,7 +2892,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     const logoWrapEl = titleEl.createSpan({ cls: "deepsidian-mark" });
     logoWrapEl.createEl("img", {
       attr: {
-        src: this.plugin.getAssetUrl("assets/deepsidian-orb-512.png"),
+        src: this.plugin.getAssetUrl("assets/whale.png"),
         alt: ""
       }
     });
@@ -3142,7 +3142,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     this.emptyStateEl.createEl("img", {
       cls: "deepsidian-empty-art",
       attr: {
-        src: this.plugin.getAssetUrl("assets/deepsidian-orb-512.png"),
+        src: this.plugin.getAssetUrl("assets/whale.png"),
         alt: ""
       }
     });
