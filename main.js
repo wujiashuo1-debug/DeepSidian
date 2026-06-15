@@ -354,13 +354,13 @@ var THINKING_LEVEL_LABELS = {
   max: "Max"
 };
 var THINKING_CONFIG = {
-  low: { thinking: false, reflectionRounds: 0 },
-  med: { thinking: true, reflectionRounds: 1 },
-  high: { thinking: true, reflectionRounds: 2 },
-  max: { thinking: true, reflectionRounds: 3 }
+  low: { thinking: false, effort: "direct", stepBoost: 0 },
+  med: { thinking: true, effort: "reason", stepBoost: 0 },
+  high: { thinking: true, effort: "thorough", stepBoost: 4 },
+  max: { thinking: true, effort: "max", stepBoost: 12 }
 };
 function thinkingEnabled(level) {
-  return THINKING_CONFIG[level].thinking || THINKING_CONFIG[level].reflectionRounds > 0;
+  return THINKING_CONFIG[level].thinking;
 }
 var MODEL_OPTIONS = ["deepseek-v4-flash", "deepseek-v4-pro"];
 var MODEL_PRICING = {
@@ -420,7 +420,7 @@ var ZH = {
   permDownload: "\u5141\u8BB8\u4E0B\u8F7D\u9644\u4EF6",
   permDependsOn: "\u4EC5\u5728\u201C\u5141\u8BB8 AI \u5199\u5165\u7B14\u8BB0\u201D\u603B\u5F00\u5173\u5F00\u542F\u65F6\u751F\u6548\u3002",
   thinkingDepth: "\u601D\u8003\u6DF1\u5EA6",
-  thinkingDepthDesc: "Low=\u4E0D\u601D\u8003(\u6700\u5FEB\u6700\u7701)\uFF1BMed/High/Max \u5F00\u542F\u601D\u8003\uFF0C\u5E76\u5728\u7ED9\u51FA\u7B54\u6848\u540E\u5206\u522B\u518D\u505A 1/2/3 \u8F6E\u81EA\u6211\u53CD\u601D\u6539\u8FDB\u3002",
+  thinkingDepthDesc: "\u7B54\u6848\u51FA\u7089\u201C\u4E4B\u524D\u201D\u60F3\u591A\u6DF1\u3001\u67E5\u591A\u5168\uFF08\u4E0D\u518D\u505A\u7B54\u6848\u540E\u7684\u53CD\u520D\u91CD\u5199\uFF09\uFF1ALow=\u4E0D\u601D\u8003(\u6700\u5FEB)\uFF1BMed=\u5F00\u539F\u751F\u601D\u8003\u94FE\u5148\u63A8\u7406\uFF1BHigh=\u601D\u8003\u94FE+\u591A\u8BFB\u591A\u67E5\u8BC1\uFF1BMax=\u5148\u62C6\u89E3\u3001\u5206\u5934\u8C03\u7814\u3001\u6536\u9F50\u8BC1\u636E\u518D\u7EFC\u5408\u3002",
   bash: "\u547D\u4EE4\u6267\u884C\uFF08bash\uFF09",
   bashDesc: "\u4EC5\u684C\u9762\u7AEF\u3002\u5F00\u542F\u540E AI \u53EF\u5728\u5E93\u6839\u76EE\u5F55\u6267\u884C shell \u547D\u4EE4\uFF1B\u9AD8\u5371\u547D\u4EE4\u59CB\u7EC8\u88AB\u62E6\u622A\u3002\u9ED8\u8BA4\u5173\u95ED\u3002",
   bashAuto: "\u81EA\u52A8\u6279\u51C6\u547D\u4EE4",
@@ -449,6 +449,9 @@ var ZH = {
   modelHintFlash: "\u4FBF\u5B9C\u5FEB\uFF0C\u65E5\u5E38\u9996\u9009",
   modelHintPro: "\u66F4\u5F3A\uFF0C\u590D\u6742\u4EFB\u52A1",
   thinkHintOff: "\u4E0D\u601D\u8003\uFF0C\u6700\u5FEB",
+  thinkHintMed: "\u5F00\u542F\u601D\u8003\u94FE\uFF0C\u5148\u63A8\u7406\u518D\u7B54",
+  thinkHintHigh: "\u601D\u8003\u94FE + \u591A\u8BFB\u591A\u67E5\u8BC1",
+  thinkHintMax: "\u601D\u8003\u94FE + \u62C6\u89E3\u8C03\u7814\u540E\u7EFC\u5408",
   emptyTitle: "\u5728\u5FD9\u4E9B\u4EC0\u4E48\uFF1F",
   emptySubtitle: "\u8BFB\u7B14\u8BB0\u3001\u641C\u5E93\u3001\u6539\u5199\u9009\u533A\u3001\u6293\u7F51\u9875\uFF0C\u6216\u8005\u8BA9 DeepSidian \u76F4\u63A5\u6574\u7406\u5F53\u524D\u6587\u4EF6\u3002",
   thinking: "\u601D\u8003\u4E2D",
@@ -493,7 +496,7 @@ var EN = {
   permDownload: "Allow downloading attachments",
   permDependsOn: 'Only applies while the master "Allow AI to write notes" switch is on.',
   thinkingDepth: "Thinking depth",
-  thinkingDepthDesc: "Low = no thinking (fastest/cheapest). Med/High/Max enable thinking plus 1/2/3 self-reflection passes.",
+  thinkingDepthDesc: "How deeply it reasons and gathers evidence BEFORE answering (no post-answer rumination): Low = no thinking (fastest); Med = native thinking first; High = thinking + read & verify more; Max = plan, research in parallel, then synthesize.",
   bash: "Command execution (bash)",
   bashDesc: "Desktop only. Lets the AI run shell commands in the vault root; high-risk commands are always blocked. Off by default.",
   bashAuto: "Auto-approve commands",
@@ -520,6 +523,9 @@ var EN = {
   modelHintFlash: "cheap & fast, default",
   modelHintPro: "stronger, complex tasks",
   thinkHintOff: "no thinking, fastest",
+  thinkHintMed: "native thinking, reason first",
+  thinkHintHigh: "thinking + gather evidence",
+  thinkHintMax: "thinking + plan, research, synthesize",
   emptyTitle: "How's it going?",
   emptySubtitle: "Read notes, search the vault, rewrite a selection, fetch a page, or let DeepSidian tidy the current file.",
   thinking: "Thinking",
@@ -2420,7 +2426,6 @@ function isRecord(value) {
 }
 
 // src/agentLoop.ts
-var REFLECTION_PROMPT = `\u8BF7\u4E25\u683C\u81EA\u6211\u5BA1\u89C6\u4F60\u4E0A\u9762\u7684\u6700\u7EC8\u56DE\u7B54\uFF1A\u662F\u5426\u5B8C\u6574\u8986\u76D6\u4E86\u6211\u7684\u9700\u6C42\uFF1F\u6709\u6CA1\u6709\u4E8B\u5B9E\u9519\u8BEF\u3001\u9057\u6F0F\u3001\u4E0D\u51C6\u786E\u6216\u53EF\u4EE5\u66F4\u6DF1\u5165/\u66F4\u6E05\u6670\u7684\u5730\u65B9\uFF1F\u5982\u6709\u9700\u8981\u53EF\u518D\u8C03\u7528\u5DE5\u5177\u6838\u5B9E\u3002\u7136\u540E\u76F4\u63A5\u8F93\u51FA\u6539\u8FDB\u540E\u7684\u3010\u5B8C\u6574\u3011\u56DE\u7B54\uFF1B\u5982\u679C\u539F\u56DE\u7B54\u786E\u5B9E\u5DF2\u7ECF\u8DB3\u591F\u597D\uFF0C\u5C31\u4FDD\u6301\u7ED3\u8BBA\u539F\u6837\u5E76\u7B80\u6D01\u91CD\u8FF0\u3002\u4E0D\u8981\u89E3\u91CA\u4F60\u6539\u4E86\u4EC0\u4E48\u3002`;
 var REQUIRED_TOOL_RETRY_PROMPT = `\u8FD9\u4E2A\u8BF7\u6C42\u6D89\u53CA\u53EF\u9A8C\u8BC1\u7684\u5916\u90E8\u52A8\u4F5C\u6216\u5E93\u5185\u52A8\u4F5C\uFF0C\u4F46\u4F60\u4E0A\u4E00\u8F6E\u6CA1\u6709\u6210\u529F\u5B8C\u6210\u5FC5\u8981\u5DE5\u5177\u8C03\u7528\u3002\u8BF7\u91CD\u65B0\u5904\u7406\uFF1A
 - \u9700\u8981\u8BFB\u53D6\u3001\u641C\u7D22\u3001\u6293\u53D6\u3001\u5199\u5165\u3001\u6253\u5F00\u3001\u7F16\u8F91\u3001\u4E0B\u8F7D\u3001\u770B\u56FE\u6216\u6267\u884C\u547D\u4EE4\u65F6\uFF0C\u5FC5\u987B\u5148\u8C03\u7528\u5BF9\u5E94\u5DE5\u5177\u3002
 - \u53EA\u6709\u5DE5\u5177\u8FD4\u56DE ok:true \u540E\uFF0C\u624D\u80FD\u8BF4\u201C\u5DF2\u8BFB\u53D6 / \u5DF2\u641C\u7D22 / \u5DF2\u6293\u53D6 / \u5DF2\u5199\u5165 / \u5DF2\u5B8C\u6210\u201D\u3002
@@ -2441,27 +2446,12 @@ var AgentLoop = class {
     this.promptTokens = 0;
     this.completionTokens = 0;
     this.lastPromptTokens = 0;
-    this.usedAnyTool = false;
   }
   async run(messages) {
-    var _a, _b, _c, _d;
     this.promptTokens = 0;
     this.completionTokens = 0;
     this.lastPromptTokens = 0;
-    this.usedAnyTool = false;
-    const reflectionRounds = Math.max(0, Math.min(5, (_a = this.options.reflectionRounds) != null ? _a : 0));
-    let phase = await this.runPhase(messages, this.options.requireToolUse === true);
-    const trivialChat = !phase.aborted && !this.usedAnyTool && phase.content.trim().length < 400;
-    const effectiveReflections = trivialChat ? 0 : reflectionRounds;
-    for (let round = 1; round <= effectiveReflections && !phase.aborted; round += 1) {
-      if ((_b = this.options.signal) == null ? void 0 : _b.aborted) {
-        break;
-      }
-      (_d = (_c = this.options.callbacks) == null ? void 0 : _c.onReflect) == null ? void 0 : _d.call(_c, round, effectiveReflections);
-      messages.push({ role: "assistant", content: phase.content });
-      messages.push({ role: "user", content: REFLECTION_PROMPT });
-      phase = await this.runPhase(messages, false);
-    }
+    const phase = await this.runPhase(messages, this.options.requireToolUse === true);
     return {
       content: phase.content,
       aborted: phase.aborted,
@@ -2500,9 +2490,6 @@ var AgentLoop = class {
         this.lastPromptTokens = result.usage.prompt_tokens;
       }
       const toolCalls = (_g = result.toolCalls) != null ? _g : [];
-      if (toolCalls.length) {
-        this.usedAnyTool = true;
-      }
       if (!toolCalls.length) {
         if (requireToolUse && tools.length && !retriedMissingRequiredTool) {
           const hasRequiredEvidence = this.hasRequiredEvidence(
@@ -2699,6 +2686,18 @@ Be careful with writes (you're editing notes the user has built up over time, no
 You have no web search: when the user gives only a topic with no link, say you can't search, answer from existing knowledge, and ask for a URL so you can web_fetch it.
 
 Match depth to the task: capture, lookup, and simple Q&A \u2192 answer directly; synthesis, tidying, or building structure across many notes \u2192 think in steps (gather first \u2192 group \u2192 conclude), using todo_write to track items (don't wrap up until they're done) and dispatch_agent for independent sub-questions or heavy reading (take only its conclusion).`
+};
+var EFFORT_INSTRUCTIONS = {
+  direct: { zh: "", en: "" },
+  reason: { zh: "", en: "" },
+  thorough: {
+    zh: "\uFF08\u601D\u8003\u529B\u5EA6\uFF09\u5BF9\u4E0D\u7B80\u5355\u7684\u95EE\u9898\uFF1A\u5148\u7406\u6E05\u601D\u8DEF\uFF0C\u5FC5\u8981\u65F6\u591A\u8BFB\u51E0\u7BC7\u76F8\u5173\u7B14\u8BB0\u3001\u591A\u67E5\u8BC1\u3001\u6743\u8861\u4E0D\u540C\u89D2\u5EA6\uFF0C\u518D\u7ED9\u51FA\u4E00\u4E2A\u63A8\u6572\u8FC7\u7684\u5B8C\u6574\u7B54\u6848\u3002",
+    en: "(Effort) For non-trivial questions: work out your reasoning first; when useful, read several related notes, verify, and weigh alternatives, then give one well-reasoned, complete answer."
+  },
+  max: {
+    zh: "\uFF08\u6DF1\u5EA6\u601D\u8003\uFF09\u590D\u6742\u4EFB\u52A1\u5148\u7528 todo_write \u62C6\u89E3\u6B65\u9AA4\u3001\u6309\u9700\u7528 dispatch_agent \u5206\u5934\u8C03\u7814\uFF0C\u628A\u8BC1\u636E\u6536\u9F50\u3001\u5229\u5F0A\u6743\u8861\u6E05\u695A\u540E\u518D\u7EFC\u5408\u6210\u4E00\u4E2A\u7B54\u6848\u3002\u7EDD\u4E0D\u628A\u540C\u4E00\u4E2A\u7B54\u6848\u53CD\u590D\u91CD\u5199\u3002",
+    en: "(Deep effort) For complex tasks, break the work down with todo_write, use dispatch_agent to research in parallel when useful, gather and weigh the evidence, then synthesize a single answer. Never rewrite the same answer repeatedly."
+  }
 };
 var SUBAGENT_PROMPTS = {
   explore: `\u4F60\u662F DeepSidian \u7684\u53EA\u8BFB\u8C03\u7814\u5B50 Agent\uFF1A\u53EA\u80FD\u8BFB\u3001\u641C\u3001\u5217\u4E3E\u5E93\u5185\u7B14\u8BB0\u548C\u6293\u7F51\u9875\uFF0C\u4E0D\u80FD\u5199\u3002\u9AD8\u6548\u5B9A\u4F4D\u4FE1\u606F\uFF0C\u5B8C\u6210\u540E\u7528\u4E2D\u6587\u7ED9\u51FA\u7ED3\u6784\u5316\u3001\u7CBE\u70BC\u7684\u7ED3\u8BBA\uFF08\u5173\u952E\u53D1\u73B0 + \u6D89\u53CA\u7684\u7B14\u8BB0\u8DEF\u5F84/\u94FE\u63A5\uFF09\uFF0C\u4E0D\u5806\u539F\u6587\u3002\u53EA\u6709\u5DE5\u5177\u771F\u6B63\u6210\u529F\u624D\u58F0\u79F0\u8BFB\u5230/\u641C\u5230/\u6293\u5230\uFF0C\u5426\u5219\u76F4\u8BF4\u6CA1\u62FF\u5230\u3002`,
@@ -2978,10 +2977,9 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     thinkingPill.addEventListener("click", (event) => {
       const menu = new import_obsidian4.Menu();
       for (const level of THINKING_LEVELS) {
-        const rounds = THINKING_CONFIG[level].reflectionRounds;
-        const hint = rounds === 0 ? this.t("thinkHintOff") : this.plugin.settings.language === "en" ? `thinking + ${rounds} reflection${rounds > 1 ? "s" : ""}` : `\u601D\u8003 + ${rounds} \u8F6E\u81EA\u6211\u53CD\u601D`;
+        const hintKey = level === "low" ? "thinkHintOff" : level === "med" ? "thinkHintMed" : level === "high" ? "thinkHintHigh" : "thinkHintMax";
         menu.addItem((item) => {
-          item.setTitle(`${THINKING_LEVEL_LABELS[level]} \xB7 ${hint}`).setChecked(this.plugin.settings.thinkingLevel === level).onClick(async () => {
+          item.setTitle(`${THINKING_LEVEL_LABELS[level]} \xB7 ${this.t(hintKey)}`).setChecked(this.plugin.settings.thinkingLevel === level).onClick(async () => {
             this.plugin.settings.thinkingLevel = level;
             await this.plugin.saveSettings();
             renderThinkingPill();
@@ -3332,22 +3330,17 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       client: this.plugin.createClient(),
       tools: VAULT_TOOL_DEFINITIONS,
       toolContext: this.buildToolContext(signal, true),
-      maxSteps: this.plugin.settings.maxToolSteps,
+      // 高思考等级放宽工具步数，让它能多取证、多调研。
+      maxSteps: Math.min(30, this.plugin.settings.maxToolSteps + config.stepBoost),
       thinking: config.thinking,
       // 只有识别出"明确需要某类工具"时才强制 + 纠偏；普通知识/解释类问题正常直接回答。
       requireToolUse: requiredGroups.length > 0,
       requiredToolGroups: requiredGroups,
-      reflectionRounds: config.reflectionRounds,
       signal,
       callbacks: {
         onToolStart: (toolCall, args) => this.startToolCard(toolCall, args),
         onToolFinish: (card, ok, content) => this.finishToolCard(card, ok, content),
         onTodoUpdate: (markdown) => this.renderTodoPanel(markdown),
-        onReflect: (round, total) => {
-          typewriter.reset();
-          const reflectLabel = this.plugin.settings.language === "en" ? `Reflecting ${round}/${total}` : `\u7B2C ${round}/${total} \u8F6E\u53CD\u601D`;
-          this.renderThinkingIndicator(pendingEl, reflectLabel);
-        },
         onAssistantDelta: (content) => {
           if (!this.turnFirstTokenAt) {
             this.turnFirstTokenAt = Date.now();
@@ -3512,6 +3505,11 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
         content: (_a = SYSTEM_PROMPTS[this.plugin.settings.language]) != null ? _a : SYSTEM_PROMPTS.zh
       }
     ];
+    const effort = THINKING_CONFIG[this.plugin.settings.thinkingLevel].effort;
+    const effortText = EFFORT_INSTRUCTIONS[effort][this.plugin.settings.language] || EFFORT_INSTRUCTIONS[effort].zh;
+    if (effortText) {
+      messages.push({ role: "system", content: effortText });
+    }
     const activeNoteContext = await this.plugin.getActiveNoteContext();
     if (activeNoteContext) {
       messages.push({

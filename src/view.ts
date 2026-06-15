@@ -6,6 +6,7 @@ import {
   DeepSidianToolRun,
   DeepSidianUndoSnapshot,
   DeepSidianSession,
+  EffortLevel,
   Lang,
   MODEL_OPTIONS,
   MODEL_PRICING,
@@ -64,6 +65,20 @@ Be careful with writes (you're editing notes the user has built up over time, no
 You have no web search: when the user gives only a topic with no link, say you can't search, answer from existing knowledge, and ask for a URL so you can web_fetch it.
 
 Match depth to the task: capture, lookup, and simple Q&A → answer directly; synthesis, tidying, or building structure across many notes → think in steps (gather first → group → conclude), using todo_write to track items (don't wrap up until they're done) and dispatch_agent for independent sub-questions or heavy reading (take only its conclusion).`
+};
+
+// 思考深度的“取证/推理力度”提示，按 effort 注入（direct/reason 不加，靠原生思考链）。
+const EFFORT_INSTRUCTIONS: Record<EffortLevel, { zh: string; en: string }> = {
+  direct: { zh: "", en: "" },
+  reason: { zh: "", en: "" },
+  thorough: {
+    zh: "（思考力度）对不简单的问题：先理清思路，必要时多读几篇相关笔记、多查证、权衡不同角度，再给出一个推敲过的完整答案。",
+    en: "(Effort) For non-trivial questions: work out your reasoning first; when useful, read several related notes, verify, and weigh alternatives, then give one well-reasoned, complete answer."
+  },
+  max: {
+    zh: "（深度思考）复杂任务先用 todo_write 拆解步骤、按需用 dispatch_agent 分头调研，把证据收齐、利弊权衡清楚后再综合成一个答案。绝不把同一个答案反复重写。",
+    en: "(Deep effort) For complex tasks, break the work down with todo_write, use dispatch_agent to research in parallel when useful, gather and weigh the evidence, then synthesize a single answer. Never rewrite the same answer repeatedly."
+  }
 };
 
 const SUBAGENT_PROMPTS: Record<AgentType, string> = {
@@ -427,16 +442,11 @@ export class DeepSidianView extends ItemView {
     thinkingPill.addEventListener("click", (event) => {
       const menu = new Menu();
       for (const level of THINKING_LEVELS) {
-        const rounds = THINKING_CONFIG[level].reflectionRounds;
-        const hint =
-          rounds === 0
-            ? this.t("thinkHintOff")
-            : this.plugin.settings.language === "en"
-              ? `thinking + ${rounds} reflection${rounds > 1 ? "s" : ""}`
-              : `思考 + ${rounds} 轮自我反思`;
+        const hintKey =
+          level === "low" ? "thinkHintOff" : level === "med" ? "thinkHintMed" : level === "high" ? "thinkHintHigh" : "thinkHintMax";
         menu.addItem((item) => {
           item
-            .setTitle(`${THINKING_LEVEL_LABELS[level]} · ${hint}`)
+            .setTitle(`${THINKING_LEVEL_LABELS[level]} · ${this.t(hintKey)}`)
             .setChecked(this.plugin.settings.thinkingLevel === level)
             .onClick(async () => {
               this.plugin.settings.thinkingLevel = level;
@@ -867,25 +877,17 @@ export class DeepSidianView extends ItemView {
       client: this.plugin.createClient(),
       tools: VAULT_TOOL_DEFINITIONS,
       toolContext: this.buildToolContext(signal, true),
-      maxSteps: this.plugin.settings.maxToolSteps,
+      // 高思考等级放宽工具步数，让它能多取证、多调研。
+      maxSteps: Math.min(30, this.plugin.settings.maxToolSteps + config.stepBoost),
       thinking: config.thinking,
       // 只有识别出"明确需要某类工具"时才强制 + 纠偏；普通知识/解释类问题正常直接回答。
       requireToolUse: requiredGroups.length > 0,
       requiredToolGroups: requiredGroups,
-      reflectionRounds: config.reflectionRounds,
       signal,
       callbacks: {
         onToolStart: (toolCall, args) => this.startToolCard(toolCall, args),
         onToolFinish: (card, ok, content) => this.finishToolCard(card as ToolCardHandle, ok, content),
         onTodoUpdate: (markdown) => this.renderTodoPanel(markdown),
-        onReflect: (round, total) => {
-          typewriter.reset();
-          const reflectLabel =
-            this.plugin.settings.language === "en"
-              ? `Reflecting ${round}/${total}`
-              : `第 ${round}/${total} 轮反思`;
-          this.renderThinkingIndicator(pendingEl, reflectLabel);
-        },
         onAssistantDelta: (content) => {
           if (!this.turnFirstTokenAt) {
             this.turnFirstTokenAt = Date.now();
@@ -1081,6 +1083,14 @@ export class DeepSidianView extends ItemView {
         content: SYSTEM_PROMPTS[this.plugin.settings.language] ?? SYSTEM_PROMPTS.zh
       }
     ];
+
+    // 按思考深度注入“想得多深、查得多全”的力度提示（Low/Med 不加，靠原生思考链）。
+    const effort = THINKING_CONFIG[this.plugin.settings.thinkingLevel].effort;
+    const effortText = EFFORT_INSTRUCTIONS[effort][this.plugin.settings.language] || EFFORT_INSTRUCTIONS[effort].zh;
+
+    if (effortText) {
+      messages.push({ role: "system", content: effortText });
+    }
 
     const activeNoteContext = await this.plugin.getActiveNoteContext();
 

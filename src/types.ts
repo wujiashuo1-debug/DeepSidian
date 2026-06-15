@@ -13,19 +13,24 @@ export const THINKING_LEVEL_LABELS: Record<ThinkingLevel, string> = {
   max: "Max"
 };
 
+export type EffortLevel = "direct" | "reason" | "thorough" | "max";
+
 /**
- * 思考深度：除了开启 V4 thinking 模式，更高等级还让 Agent 在给出答案后做多轮“自我反思/再思考”
- * （审视上一轮答案→必要时再调用工具→输出改进版）。轮数越多越深、越慢、越贵。
+ * 思考深度 = 给出答案“之前”想得多深、查得多全（原生思考链 + 取证强度 + 工具预算），
+ * 不再做答案出炉后的“自我反思/重写”——那只是反刍，会覆盖好的回复，对质量没帮助。
+ * - thinking：开启 V4 原生思考链（出答案前先推理）。
+ * - effort：注入给模型的“思考/取证”力度提示。
+ * - stepBoost：额外放宽的工具步数，让高等级能多取证、多调研。
  */
-export const THINKING_CONFIG: Record<ThinkingLevel, { thinking: boolean; reflectionRounds: number }> = {
-  low: { thinking: false, reflectionRounds: 0 },
-  med: { thinking: true, reflectionRounds: 1 },
-  high: { thinking: true, reflectionRounds: 2 },
-  max: { thinking: true, reflectionRounds: 3 }
+export const THINKING_CONFIG: Record<ThinkingLevel, { thinking: boolean; effort: EffortLevel; stepBoost: number }> = {
+  low: { thinking: false, effort: "direct", stepBoost: 0 },
+  med: { thinking: true, effort: "reason", stepBoost: 0 },
+  high: { thinking: true, effort: "thorough", stepBoost: 4 },
+  max: { thinking: true, effort: "max", stepBoost: 12 }
 };
 
 export function thinkingEnabled(level: ThinkingLevel): boolean {
-  return THINKING_CONFIG[level].thinking || THINKING_CONFIG[level].reflectionRounds > 0;
+  return THINKING_CONFIG[level].thinking;
 }
 
 export const MODEL_OPTIONS = ["deepseek-v4-flash", "deepseek-v4-pro"] as const;

@@ -8,8 +8,6 @@ export interface AgentCallbacks {
   onToolFinish?: (card: unknown, ok: boolean, content: string) => void;
   /** todo_write 更新后回调，用于渲染 UI 进度面板。 */
   onTodoUpdate?: (markdown: string) => void;
-  /** 进入第 round/total 轮自我反思前回调，用于更新状态提示。 */
-  onReflect?: (round: number, total: number) => void;
   /** 流式：每收到一点正文就回调当前累计内容，用于实时渲染。 */
   onAssistantDelta?: (content: string) => void;
 }
@@ -26,13 +24,10 @@ export interface AgentLoopOptions {
   requireToolUse?: boolean;
   /** 更精确的工具成功要求：例如联网任务必须至少有 web 类工具成功，写入任务必须至少有 write 类工具成功。 */
   requiredToolGroups?: RequiredToolGroup[];
-  /** 给出答案后再做几轮“自我反思/再思考”，0 表示不反思。 */
-  reflectionRounds?: number;
   signal?: AbortSignal;
   callbacks?: AgentCallbacks;
 }
 
-const REFLECTION_PROMPT = `请严格自我审视你上面的最终回答：是否完整覆盖了我的需求？有没有事实错误、遗漏、不准确或可以更深入/更清晰的地方？如有需要可再调用工具核实。然后直接输出改进后的【完整】回答；如果原回答确实已经足够好，就保持结论原样并简洁重述。不要解释你改了什么。`;
 const REQUIRED_TOOL_RETRY_PROMPT = `这个请求涉及可验证的外部动作或库内动作，但你上一轮没有成功完成必要工具调用。请重新处理：
 - 需要读取、搜索、抓取、写入、打开、编辑、下载、看图或执行命令时，必须先调用对应工具。
 - 只有工具返回 ok:true 后，才能说“已读取 / 已搜索 / 已抓取 / 已写入 / 已完成”。
@@ -71,7 +66,6 @@ export class AgentLoop {
   private promptTokens = 0;
   private completionTokens = 0;
   private lastPromptTokens = 0;
-  private usedAnyTool = false;
 
   constructor(private options: AgentLoopOptions) {}
 
@@ -79,26 +73,9 @@ export class AgentLoop {
     this.promptTokens = 0;
     this.completionTokens = 0;
     this.lastPromptTokens = 0;
-    this.usedAnyTool = false;
-    const reflectionRounds = Math.max(0, Math.min(5, this.options.reflectionRounds ?? 0));
 
-    let phase = await this.runPhase(messages, this.options.requireToolUse === true);
-
-    // 闲聊优化：没用过任何工具、且回答很短时，跳过反思——省 token/延迟，复杂或带工具的回答才深挖。
-    const trivialChat = !phase.aborted && !this.usedAnyTool && phase.content.trim().length < 400;
-    const effectiveReflections = trivialChat ? 0 : reflectionRounds;
-
-    // 高思考等级：给出答案后再做若干轮自我反思，每轮把上一答案喂回让模型审视并改进。
-    for (let round = 1; round <= effectiveReflections && !phase.aborted; round += 1) {
-      if (this.options.signal?.aborted) {
-        break;
-      }
-
-      this.options.callbacks?.onReflect?.(round, effectiveReflections);
-      messages.push({ role: "assistant", content: phase.content });
-      messages.push({ role: "user", content: REFLECTION_PROMPT });
-      phase = await this.runPhase(messages, false);
-    }
+    // 单趟：思考链 + 工具取证都发生在这一趟的“出答案之前”，不再有任何答案出炉后的反刍/重写。
+    const phase = await this.runPhase(messages, this.options.requireToolUse === true);
 
     return {
       content: phase.content,
@@ -139,10 +116,6 @@ export class AgentLoop {
         this.lastPromptTokens = result.usage.prompt_tokens;
       }
       const toolCalls = result.toolCalls ?? [];
-
-      if (toolCalls.length) {
-        this.usedAnyTool = true;
-      }
 
       if (!toolCalls.length) {
         if (requireToolUse && tools.length && !retriedMissingRequiredTool) {
