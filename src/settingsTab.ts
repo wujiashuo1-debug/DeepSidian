@@ -1,26 +1,45 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type DeepSidianPlugin from "../main";
-import { THINKING_LEVEL_LABELS, THINKING_LEVELS, ThinkingLevel } from "./types";
+import { Lang, THINKING_LEVEL_LABELS, THINKING_LEVELS, ThinkingLevel } from "./types";
+import { createTranslator, Translator } from "./i18n";
 
 export class DeepSidianSettingTab extends PluginSettingTab {
+  private t!: Translator;
+
   constructor(app: App, private plugin: DeepSidianPlugin) {
     super(app, plugin);
   }
 
   display(): void {
     const { containerEl } = this;
+    this.t = createTranslator(this.plugin.settings.language);
+    const t = this.t;
 
     containerEl.empty();
     containerEl.addClass("deepsidian-settings");
 
     containerEl.createEl("h2", { text: "DeepSidian" });
-    containerEl.createEl("p", {
-      text: "配置 DeepSeek API 后，DeepSidian 就可以在侧边栏里对话，并自动带上当前笔记上下文。"
-    });
+    containerEl.createEl("p", { text: t("settingsIntro") });
+
+    new Setting(containerEl)
+      .setName(t("language"))
+      .setDesc(t("languageDesc"))
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption("zh", "中文")
+          .addOption("en", "English")
+          .setValue(this.plugin.settings.language)
+          .onChange(async (value) => {
+            this.plugin.settings.language = value as Lang;
+            await this.plugin.saveSettings();
+            this.display();
+            this.plugin.refreshViews();
+          });
+      });
 
     new Setting(containerEl)
       .setName("DeepSeek API Key")
-      .setDesc("保存到当前 Obsidian 库的插件数据中。")
+      .setDesc(t("apiKeyDesc"))
       .addText((text) => {
         text
           .setPlaceholder("sk-...")
@@ -34,8 +53,8 @@ export class DeepSidianSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("Base URL")
-      .setDesc("默认使用 DeepSeek 官方 OpenAI 兼容接口。")
+      .setName(t("baseUrl"))
+      .setDesc(t("baseUrlDesc"))
       .addText((text) => {
         text
           .setPlaceholder("https://api.deepseek.com")
@@ -47,8 +66,8 @@ export class DeepSidianSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("模型")
-      .setDesc("日常对话建议 flash；复杂规划和 Agent 后续可切到 pro。")
+      .setName(t("model"))
+      .setDesc(t("modelDesc"))
       .addDropdown((dropdown) => {
         dropdown
           .addOption("deepseek-v4-flash", "deepseek-v4-flash")
@@ -61,8 +80,8 @@ export class DeepSidianSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("Temperature")
-      .setDesc("越低越稳定，越高越发散。")
+      .setName(t("temperature"))
+      .setDesc(t("temperatureDesc"))
       .addSlider((slider) => {
         slider
           .setLimits(0, 1.5, 0.1)
@@ -75,8 +94,8 @@ export class DeepSidianSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("自动加入当前笔记")
-      .setDesc("发送消息时，把当前打开笔记的路径和内容作为上下文。")
+      .setName(t("includeNote"))
+      .setDesc(t("includeNoteDesc"))
       .addToggle((toggle) => {
         toggle
           .setValue(this.plugin.settings.includeActiveNote)
@@ -87,8 +106,8 @@ export class DeepSidianSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("当前笔记上下文字数")
-      .setDesc("避免一次发送过多内容。")
+      .setName(t("maxContext"))
+      .setDesc(t("maxContextDesc"))
       .addText((text) => {
         text
           .setPlaceholder("12000")
@@ -103,8 +122,8 @@ export class DeepSidianSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("最大工具轮数")
-      .setDesc("Agent 最多连续调用多少轮工具，避免陷入循环。")
+      .setName(t("maxSteps"))
+      .setDesc(t("maxStepsDesc"))
       .addText((text) => {
         text
           .setPlaceholder("8")
@@ -119,8 +138,8 @@ export class DeepSidianSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("允许 AI 写入笔记")
-      .setDesc("写入总开关。开启后仍需分别允许具体写入类型。")
+      .setName(t("allowWrite"))
+      .setDesc(t("allowWriteDesc"))
       .addToggle((toggle) => {
         toggle
           .setValue(this.plugin.settings.enableVaultWrites)
@@ -130,15 +149,15 @@ export class DeepSidianSettingTab extends PluginSettingTab {
           });
       });
 
-    this.addWritePermissionToggle(containerEl, "createNotes", "允许创建新笔记");
-    this.addWritePermissionToggle(containerEl, "editNotes", "允许编辑已有笔记");
-    this.addWritePermissionToggle(containerEl, "appendActiveNote", "允许追加到当前笔记");
-    this.addWritePermissionToggle(containerEl, "insertAtCursor", "允许修改当前选区/光标");
-    this.addWritePermissionToggle(containerEl, "downloadAttachments", "允许下载附件");
+    this.addWritePermissionToggle(containerEl, "createNotes", t("permCreate"));
+    this.addWritePermissionToggle(containerEl, "editNotes", t("permEdit"));
+    this.addWritePermissionToggle(containerEl, "appendActiveNote", t("permAppend"));
+    this.addWritePermissionToggle(containerEl, "insertAtCursor", t("permInsert"));
+    this.addWritePermissionToggle(containerEl, "downloadAttachments", t("permDownload"));
 
     new Setting(containerEl)
-      .setName("思考深度")
-      .setDesc("Low=不思考(最快最省)；Med/High/Max 开启 thinking，并在给出答案后分别再做 1/2/3 轮自我反思改进，越高越深越慢越贵。")
+      .setName(t("thinkingDepth"))
+      .setDesc(t("thinkingDepthDesc"))
       .addDropdown((dropdown) => {
         for (const level of THINKING_LEVELS) {
           dropdown.addOption(level, THINKING_LEVEL_LABELS[level]);
@@ -153,8 +172,8 @@ export class DeepSidianSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("命令执行（bash）")
-      .setDesc("仅桌面端。开启后 AI 可在库根目录执行 shell 命令；高危命令始终被拦截。默认关闭。")
+      .setName(t("bash"))
+      .setDesc(t("bashDesc"))
       .addToggle((toggle) => {
         toggle
           .setValue(this.plugin.settings.enableBash)
@@ -165,8 +184,8 @@ export class DeepSidianSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("自动批准命令")
-      .setDesc("开启后命令直接执行、不再逐条弹窗确认（YOLO，谨慎使用）。关闭时每条命令都要你点确认。")
+      .setName(t("bashAuto"))
+      .setDesc(t("bashAutoDesc"))
       .addToggle((toggle) => {
         toggle
           .setValue(this.plugin.settings.bashAutoApprove)
@@ -177,15 +196,15 @@ export class DeepSidianSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("连接测试")
-      .setDesc("用当前配置向 DeepSeek 发送一条很短的测试消息。")
+      .setName(t("testConn"))
+      .setDesc(t("testConnDesc"))
       .addButton((button) => {
         button
-          .setButtonText("测试连接")
+          .setButtonText(t("testBtn"))
           .setCta()
           .onClick(async () => {
             button.setDisabled(true);
-            button.setButtonText("测试中...");
+            button.setButtonText(t("testing"));
 
             try {
               await this.plugin.testConnection();
@@ -193,7 +212,7 @@ export class DeepSidianSettingTab extends PluginSettingTab {
               new Notice(error instanceof Error ? error.message : String(error));
             } finally {
               button.setDisabled(false);
-              button.setButtonText("测试连接");
+              button.setButtonText(t("testBtn"));
             }
           });
       });
@@ -206,7 +225,7 @@ export class DeepSidianSettingTab extends PluginSettingTab {
   ) {
     new Setting(containerEl)
       .setName(label)
-      .setDesc("仅在“允许 AI 写入笔记”总开关开启时生效。")
+      .setDesc(this.t("permDependsOn"))
       .addToggle((toggle) => {
         toggle
           .setValue(this.plugin.settings.writePermissions[key])

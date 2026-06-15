@@ -368,6 +368,7 @@ var MODEL_PRICING = {
   "deepseek-v4-pro": { input: 0.435, output: 0.87 }
 };
 var DEFAULT_SETTINGS = {
+  language: "zh",
   apiKey: "",
   baseUrl: "https://api.deepseek.com",
   model: "deepseek-v4-flash",
@@ -390,6 +391,162 @@ var DEFAULT_SETTINGS = {
 
 // src/settingsTab.ts
 var import_obsidian2 = require("obsidian");
+
+// src/i18n.ts
+var ZH = {
+  // 设置页
+  settingsIntro: "\u914D\u7F6E DeepSeek API \u540E\uFF0CDeepSidian \u5C31\u53EF\u4EE5\u5728\u4FA7\u8FB9\u680F\u91CC\u5BF9\u8BDD\uFF0C\u5E76\u81EA\u52A8\u5E26\u4E0A\u5F53\u524D\u7B14\u8BB0\u4E0A\u4E0B\u6587\u3002",
+  language: "\u754C\u9762\u8BED\u8A00 / Language",
+  languageDesc: "\u5207\u6362\u63D2\u4EF6\u754C\u9762\u4E0E\u56DE\u590D\u8BED\u8A00\uFF08\u66F4\u6539\u540E\u91CD\u65B0\u6253\u5F00\u4FA7\u680F\u751F\u6548\uFF09\u3002",
+  apiKeyDesc: "\u4FDD\u5B58\u5230\u5F53\u524D Obsidian \u5E93\u7684\u63D2\u4EF6\u6570\u636E\u4E2D\u3002",
+  baseUrl: "Base URL",
+  baseUrlDesc: "\u9ED8\u8BA4\u4F7F\u7528 DeepSeek \u5B98\u65B9 OpenAI \u517C\u5BB9\u63A5\u53E3\u3002",
+  model: "\u6A21\u578B",
+  modelDesc: "\u65E5\u5E38\u5BF9\u8BDD\u5EFA\u8BAE flash\uFF1B\u590D\u6742\u89C4\u5212\u548C Agent \u540E\u7EED\u53EF\u5207\u5230 pro\u3002",
+  temperature: "Temperature",
+  temperatureDesc: "\u8D8A\u4F4E\u8D8A\u7A33\u5B9A\uFF0C\u8D8A\u9AD8\u8D8A\u53D1\u6563\u3002",
+  includeNote: "\u81EA\u52A8\u52A0\u5165\u5F53\u524D\u7B14\u8BB0",
+  includeNoteDesc: "\u53D1\u9001\u6D88\u606F\u65F6\uFF0C\u628A\u5F53\u524D\u6253\u5F00\u7B14\u8BB0\u7684\u8DEF\u5F84\u548C\u5185\u5BB9\u4F5C\u4E3A\u4E0A\u4E0B\u6587\u3002",
+  maxContext: "\u5F53\u524D\u7B14\u8BB0\u4E0A\u4E0B\u6587\u5B57\u6570",
+  maxContextDesc: "\u907F\u514D\u4E00\u6B21\u53D1\u9001\u8FC7\u591A\u5185\u5BB9\u3002",
+  maxSteps: "\u6700\u5927\u5DE5\u5177\u8F6E\u6570",
+  maxStepsDesc: "Agent \u6700\u591A\u8FDE\u7EED\u8C03\u7528\u591A\u5C11\u8F6E\u5DE5\u5177\uFF0C\u907F\u514D\u9677\u5165\u5FAA\u73AF\u3002",
+  allowWrite: "\u5141\u8BB8 AI \u5199\u5165\u7B14\u8BB0\uFF08\u603B\u5F00\u5173\uFF09",
+  allowWriteDesc: "\u603B\u5F00\u5173\u3002\u5F00\u542F\u540E\u518D\u6309\u4E0B\u9762\u7684\u7EC6\u9879\u6388\u6743\u5177\u4F53\u5199\u5165\u52A8\u4F5C\u3002",
+  permCreate: "\u5141\u8BB8\u521B\u5EFA\u65B0\u7B14\u8BB0",
+  permEdit: "\u5141\u8BB8\u7F16\u8F91\u5DF2\u6709\u7B14\u8BB0",
+  permAppend: "\u5141\u8BB8\u8FFD\u52A0\u5230\u5F53\u524D\u7B14\u8BB0",
+  permInsert: "\u5141\u8BB8\u4FEE\u6539\u5F53\u524D\u9009\u533A/\u5149\u6807",
+  permDownload: "\u5141\u8BB8\u4E0B\u8F7D\u9644\u4EF6",
+  permDependsOn: "\u4EC5\u5728\u201C\u5141\u8BB8 AI \u5199\u5165\u7B14\u8BB0\u201D\u603B\u5F00\u5173\u5F00\u542F\u65F6\u751F\u6548\u3002",
+  thinkingDepth: "\u601D\u8003\u6DF1\u5EA6",
+  thinkingDepthDesc: "Low=\u4E0D\u601D\u8003(\u6700\u5FEB\u6700\u7701)\uFF1BMed/High/Max \u5F00\u542F\u601D\u8003\uFF0C\u5E76\u5728\u7ED9\u51FA\u7B54\u6848\u540E\u5206\u522B\u518D\u505A 1/2/3 \u8F6E\u81EA\u6211\u53CD\u601D\u6539\u8FDB\u3002",
+  bash: "\u547D\u4EE4\u6267\u884C\uFF08bash\uFF09",
+  bashDesc: "\u4EC5\u684C\u9762\u7AEF\u3002\u5F00\u542F\u540E AI \u53EF\u5728\u5E93\u6839\u76EE\u5F55\u6267\u884C shell \u547D\u4EE4\uFF1B\u9AD8\u5371\u547D\u4EE4\u59CB\u7EC8\u88AB\u62E6\u622A\u3002\u9ED8\u8BA4\u5173\u95ED\u3002",
+  bashAuto: "\u81EA\u52A8\u6279\u51C6\u547D\u4EE4",
+  bashAutoDesc: "\u5F00\u542F\u540E\u547D\u4EE4\u76F4\u63A5\u6267\u884C\u3001\u4E0D\u518D\u9010\u6761\u5F39\u7A97\u786E\u8BA4\uFF08YOLO\uFF0C\u8C28\u614E\u4F7F\u7528\uFF09\u3002",
+  testConn: "\u8FDE\u63A5\u6D4B\u8BD5",
+  testConnDesc: "\u7528\u5F53\u524D\u914D\u7F6E\u5411 DeepSeek \u53D1\u9001\u4E00\u6761\u5F88\u77ED\u7684\u6D4B\u8BD5\u6D88\u606F\u3002",
+  testBtn: "\u6D4B\u8BD5\u8FDE\u63A5",
+  testing: "\u6D4B\u8BD5\u4E2D...",
+  // 侧栏内联设置面板（短标签）
+  inlineModel: "\u6A21\u578B",
+  inlineIncludeNote: "\u81EA\u52A8\u5E26\u4E0A\u5F53\u524D\u7B14\u8BB0",
+  inlineAllowWrite: "\u5141\u8BB8\u5199\u5165\u7B14\u8BB0\uFF08\u603B\u5F00\u5173\uFF09",
+  permShortCreate: "\u65B0\u5EFA",
+  permShortEdit: "\u7F16\u8F91",
+  permShortAppend: "\u8FFD\u52A0",
+  permShortInsert: "\u9009\u533A",
+  permShortDownload: "\u9644\u4EF6",
+  // 聊天界面
+  inputPlaceholder: "\u6709\u4EC0\u4E48\u53EF\u4EE5\u5E2E\u4F60\u7684\uFF1F",
+  write: "\u5199\u5165",
+  command: "\u547D\u4EE4",
+  send: "\u53D1\u9001",
+  stop: "\u505C\u6B62",
+  pickModel: "\u9009\u62E9\u6A21\u578B",
+  pickThinking: "\u9009\u62E9\u601D\u8003\u6DF1\u5EA6",
+  modelHintFlash: "\u4FBF\u5B9C\u5FEB\uFF0C\u65E5\u5E38\u9996\u9009",
+  modelHintPro: "\u66F4\u5F3A\uFF0C\u590D\u6742\u4EFB\u52A1",
+  thinkHintOff: "\u4E0D\u601D\u8003\uFF0C\u6700\u5FEB",
+  emptyTitle: "\u5728\u5FD9\u4E9B\u4EC0\u4E48\uFF1F",
+  emptySubtitle: "\u8BFB\u7B14\u8BB0\u3001\u641C\u5E93\u3001\u6539\u5199\u9009\u533A\u3001\u6293\u7F51\u9875\uFF0C\u6216\u8005\u8BA9 DeepSidian \u76F4\u63A5\u6574\u7406\u5F53\u524D\u6587\u4EF6\u3002",
+  thinking: "\u601D\u8003\u4E2D",
+  copy: "\u590D\u5236",
+  todoProgress: "\u4EFB\u52A1\u8FDB\u5EA6",
+  newChat: "\u65B0\u5EFA\u5BF9\u8BDD",
+  history: "\u5386\u53F2\u5BF9\u8BDD",
+  toolRunning: "\u8FD0\u884C\u4E2D",
+  toolDone: "\u5B8C\u6210",
+  toolFailed: "\u5931\u8D25",
+  // 提示
+  needApiKey: "\u8BF7\u5148\u70B9\u51FB\u4FA7\u8FB9\u680F\u53F3\u4E0A\u89D2\u8BBE\u7F6E\uFF0C\u586B\u5199 DeepSeek API Key\u3002",
+  requestFailed: "DeepSidian \u8BF7\u6C42\u5931\u8D25\uFF1A",
+  interrupted: "\u5DF2\u4E2D\u65AD\u3002",
+  sessionNotFound: "\u6CA1\u6709\u627E\u5230\u8FD9\u4E2A\u4F1A\u8BDD\u3002",
+  // 注入给模型的回复语言指令
+  replyDirective: "\u59CB\u7EC8\u7528\u4E2D\u6587\u56DE\u7B54\u3002"
+};
+var EN = {
+  settingsIntro: "Set your DeepSeek API key and DeepSidian can chat in the sidebar with your current note as context.",
+  language: "\u754C\u9762\u8BED\u8A00 / Language",
+  languageDesc: "Switch the plugin's interface and reply language (reopen the sidebar to apply).",
+  apiKeyDesc: "Stored in this vault's plugin data.",
+  baseUrl: "Base URL",
+  baseUrlDesc: "Defaults to DeepSeek's official OpenAI-compatible endpoint.",
+  model: "Model",
+  modelDesc: "Use flash for everyday chat; switch to pro for complex planning and agent work.",
+  temperature: "Temperature",
+  temperatureDesc: "Lower is more stable, higher is more creative.",
+  includeNote: "Include current note",
+  includeNoteDesc: "Send the open note's path and content as context with each message.",
+  maxContext: "Current-note context size",
+  maxContextDesc: "Avoid sending too much content at once.",
+  maxSteps: "Max tool steps",
+  maxStepsDesc: "How many tool rounds the agent may chain, to avoid loops.",
+  allowWrite: "Allow AI to write notes (master)",
+  allowWriteDesc: "Master switch. Turn it on, then grant the specific write actions below.",
+  permCreate: "Allow creating new notes",
+  permEdit: "Allow editing existing notes",
+  permAppend: "Allow appending to the current note",
+  permInsert: "Allow editing the current selection/cursor",
+  permDownload: "Allow downloading attachments",
+  permDependsOn: 'Only applies while the master "Allow AI to write notes" switch is on.',
+  thinkingDepth: "Thinking depth",
+  thinkingDepthDesc: "Low = no thinking (fastest/cheapest). Med/High/Max enable thinking plus 1/2/3 self-reflection passes.",
+  bash: "Command execution (bash)",
+  bashDesc: "Desktop only. Lets the AI run shell commands in the vault root; high-risk commands are always blocked. Off by default.",
+  bashAuto: "Auto-approve commands",
+  bashAutoDesc: "Run commands directly without a per-command confirmation (YOLO; use with care).",
+  testConn: "Connection test",
+  testConnDesc: "Send a tiny test message to DeepSeek with the current settings.",
+  testBtn: "Test connection",
+  testing: "Testing\u2026",
+  inlineModel: "Model",
+  inlineIncludeNote: "Include current note",
+  inlineAllowWrite: "Allow writes (master)",
+  permShortCreate: "New",
+  permShortEdit: "Edit",
+  permShortAppend: "Append",
+  permShortInsert: "Sel.",
+  permShortDownload: "Files",
+  inputPlaceholder: "How can I help you today?",
+  write: "Write",
+  command: "Cmd",
+  send: "Send",
+  stop: "Stop",
+  pickModel: "Choose model",
+  pickThinking: "Choose thinking depth",
+  modelHintFlash: "cheap & fast, default",
+  modelHintPro: "stronger, complex tasks",
+  thinkHintOff: "no thinking, fastest",
+  emptyTitle: "How's it going?",
+  emptySubtitle: "Read notes, search the vault, rewrite a selection, fetch a page, or let DeepSidian tidy the current file.",
+  thinking: "Thinking",
+  copy: "Copy",
+  todoProgress: "Task progress",
+  newChat: "New chat",
+  history: "Chat history",
+  toolRunning: "running",
+  toolDone: "done",
+  toolFailed: "failed",
+  needApiKey: "Open settings (top-right of the sidebar) and enter your DeepSeek API key first.",
+  requestFailed: "DeepSidian request failed: ",
+  interrupted: "Stopped.",
+  sessionNotFound: "Conversation not found.",
+  replyDirective: "Always respond in English."
+};
+var TABLE = { zh: ZH, en: EN };
+function createTranslator(lang) {
+  var _a;
+  const dict = (_a = TABLE[lang]) != null ? _a : ZH;
+  return (key) => {
+    var _a2;
+    return (_a2 = dict[key]) != null ? _a2 : ZH[key];
+  };
+}
+
+// src/settingsTab.ts
 var DeepSidianSettingTab = class extends import_obsidian2.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
@@ -397,13 +554,21 @@ var DeepSidianSettingTab = class extends import_obsidian2.PluginSettingTab {
   }
   display() {
     const { containerEl } = this;
+    this.t = createTranslator(this.plugin.settings.language);
+    const t = this.t;
     containerEl.empty();
     containerEl.addClass("deepsidian-settings");
     containerEl.createEl("h2", { text: "DeepSidian" });
-    containerEl.createEl("p", {
-      text: "\u914D\u7F6E DeepSeek API \u540E\uFF0CDeepSidian \u5C31\u53EF\u4EE5\u5728\u4FA7\u8FB9\u680F\u91CC\u5BF9\u8BDD\uFF0C\u5E76\u81EA\u52A8\u5E26\u4E0A\u5F53\u524D\u7B14\u8BB0\u4E0A\u4E0B\u6587\u3002"
+    containerEl.createEl("p", { text: t("settingsIntro") });
+    new import_obsidian2.Setting(containerEl).setName(t("language")).setDesc(t("languageDesc")).addDropdown((dropdown) => {
+      dropdown.addOption("zh", "\u4E2D\u6587").addOption("en", "English").setValue(this.plugin.settings.language).onChange(async (value) => {
+        this.plugin.settings.language = value;
+        await this.plugin.saveSettings();
+        this.display();
+        this.plugin.refreshViews();
+      });
     });
-    new import_obsidian2.Setting(containerEl).setName("DeepSeek API Key").setDesc("\u4FDD\u5B58\u5230\u5F53\u524D Obsidian \u5E93\u7684\u63D2\u4EF6\u6570\u636E\u4E2D\u3002").addText((text) => {
+    new import_obsidian2.Setting(containerEl).setName("DeepSeek API Key").setDesc(t("apiKeyDesc")).addText((text) => {
       text.setPlaceholder("sk-...").setValue(this.plugin.settings.apiKey).onChange(async (value) => {
         this.plugin.settings.apiKey = value.trim();
         await this.plugin.saveSettings();
@@ -411,56 +576,56 @@ var DeepSidianSettingTab = class extends import_obsidian2.PluginSettingTab {
       text.inputEl.type = "password";
       text.inputEl.autocomplete = "off";
     });
-    new import_obsidian2.Setting(containerEl).setName("Base URL").setDesc("\u9ED8\u8BA4\u4F7F\u7528 DeepSeek \u5B98\u65B9 OpenAI \u517C\u5BB9\u63A5\u53E3\u3002").addText((text) => {
+    new import_obsidian2.Setting(containerEl).setName(t("baseUrl")).setDesc(t("baseUrlDesc")).addText((text) => {
       text.setPlaceholder("https://api.deepseek.com").setValue(this.plugin.settings.baseUrl).onChange(async (value) => {
         this.plugin.settings.baseUrl = value.trim() || "https://api.deepseek.com";
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian2.Setting(containerEl).setName("\u6A21\u578B").setDesc("\u65E5\u5E38\u5BF9\u8BDD\u5EFA\u8BAE flash\uFF1B\u590D\u6742\u89C4\u5212\u548C Agent \u540E\u7EED\u53EF\u5207\u5230 pro\u3002").addDropdown((dropdown) => {
+    new import_obsidian2.Setting(containerEl).setName(t("model")).setDesc(t("modelDesc")).addDropdown((dropdown) => {
       dropdown.addOption("deepseek-v4-flash", "deepseek-v4-flash").addOption("deepseek-v4-pro", "deepseek-v4-pro").setValue(this.plugin.settings.model).onChange(async (value) => {
         this.plugin.settings.model = value;
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian2.Setting(containerEl).setName("Temperature").setDesc("\u8D8A\u4F4E\u8D8A\u7A33\u5B9A\uFF0C\u8D8A\u9AD8\u8D8A\u53D1\u6563\u3002").addSlider((slider) => {
+    new import_obsidian2.Setting(containerEl).setName(t("temperature")).setDesc(t("temperatureDesc")).addSlider((slider) => {
       slider.setLimits(0, 1.5, 0.1).setDynamicTooltip().setValue(this.plugin.settings.temperature).onChange(async (value) => {
         this.plugin.settings.temperature = value;
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian2.Setting(containerEl).setName("\u81EA\u52A8\u52A0\u5165\u5F53\u524D\u7B14\u8BB0").setDesc("\u53D1\u9001\u6D88\u606F\u65F6\uFF0C\u628A\u5F53\u524D\u6253\u5F00\u7B14\u8BB0\u7684\u8DEF\u5F84\u548C\u5185\u5BB9\u4F5C\u4E3A\u4E0A\u4E0B\u6587\u3002").addToggle((toggle) => {
+    new import_obsidian2.Setting(containerEl).setName(t("includeNote")).setDesc(t("includeNoteDesc")).addToggle((toggle) => {
       toggle.setValue(this.plugin.settings.includeActiveNote).onChange(async (value) => {
         this.plugin.settings.includeActiveNote = value;
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian2.Setting(containerEl).setName("\u5F53\u524D\u7B14\u8BB0\u4E0A\u4E0B\u6587\u5B57\u6570").setDesc("\u907F\u514D\u4E00\u6B21\u53D1\u9001\u8FC7\u591A\u5185\u5BB9\u3002").addText((text) => {
+    new import_obsidian2.Setting(containerEl).setName(t("maxContext")).setDesc(t("maxContextDesc")).addText((text) => {
       text.setPlaceholder("12000").setValue(String(this.plugin.settings.maxContextCharacters)).onChange(async (value) => {
         const parsed = Number.parseInt(value, 10);
         this.plugin.settings.maxContextCharacters = Number.isFinite(parsed) && parsed > 0 ? parsed : 12e3;
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian2.Setting(containerEl).setName("\u6700\u5927\u5DE5\u5177\u8F6E\u6570").setDesc("Agent \u6700\u591A\u8FDE\u7EED\u8C03\u7528\u591A\u5C11\u8F6E\u5DE5\u5177\uFF0C\u907F\u514D\u9677\u5165\u5FAA\u73AF\u3002").addText((text) => {
+    new import_obsidian2.Setting(containerEl).setName(t("maxSteps")).setDesc(t("maxStepsDesc")).addText((text) => {
       text.setPlaceholder("8").setValue(String(this.plugin.settings.maxToolSteps)).onChange(async (value) => {
         const parsed = Number.parseInt(value, 10);
         this.plugin.settings.maxToolSteps = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 30) : 8;
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian2.Setting(containerEl).setName("\u5141\u8BB8 AI \u5199\u5165\u7B14\u8BB0").setDesc("\u5199\u5165\u603B\u5F00\u5173\u3002\u5F00\u542F\u540E\u4ECD\u9700\u5206\u522B\u5141\u8BB8\u5177\u4F53\u5199\u5165\u7C7B\u578B\u3002").addToggle((toggle) => {
+    new import_obsidian2.Setting(containerEl).setName(t("allowWrite")).setDesc(t("allowWriteDesc")).addToggle((toggle) => {
       toggle.setValue(this.plugin.settings.enableVaultWrites).onChange(async (value) => {
         this.plugin.settings.enableVaultWrites = value;
         await this.plugin.saveSettings();
       });
     });
-    this.addWritePermissionToggle(containerEl, "createNotes", "\u5141\u8BB8\u521B\u5EFA\u65B0\u7B14\u8BB0");
-    this.addWritePermissionToggle(containerEl, "editNotes", "\u5141\u8BB8\u7F16\u8F91\u5DF2\u6709\u7B14\u8BB0");
-    this.addWritePermissionToggle(containerEl, "appendActiveNote", "\u5141\u8BB8\u8FFD\u52A0\u5230\u5F53\u524D\u7B14\u8BB0");
-    this.addWritePermissionToggle(containerEl, "insertAtCursor", "\u5141\u8BB8\u4FEE\u6539\u5F53\u524D\u9009\u533A/\u5149\u6807");
-    this.addWritePermissionToggle(containerEl, "downloadAttachments", "\u5141\u8BB8\u4E0B\u8F7D\u9644\u4EF6");
-    new import_obsidian2.Setting(containerEl).setName("\u601D\u8003\u6DF1\u5EA6").setDesc("Low=\u4E0D\u601D\u8003(\u6700\u5FEB\u6700\u7701)\uFF1BMed/High/Max \u5F00\u542F thinking\uFF0C\u5E76\u5728\u7ED9\u51FA\u7B54\u6848\u540E\u5206\u522B\u518D\u505A 1/2/3 \u8F6E\u81EA\u6211\u53CD\u601D\u6539\u8FDB\uFF0C\u8D8A\u9AD8\u8D8A\u6DF1\u8D8A\u6162\u8D8A\u8D35\u3002").addDropdown((dropdown) => {
+    this.addWritePermissionToggle(containerEl, "createNotes", t("permCreate"));
+    this.addWritePermissionToggle(containerEl, "editNotes", t("permEdit"));
+    this.addWritePermissionToggle(containerEl, "appendActiveNote", t("permAppend"));
+    this.addWritePermissionToggle(containerEl, "insertAtCursor", t("permInsert"));
+    this.addWritePermissionToggle(containerEl, "downloadAttachments", t("permDownload"));
+    new import_obsidian2.Setting(containerEl).setName(t("thinkingDepth")).setDesc(t("thinkingDepthDesc")).addDropdown((dropdown) => {
       for (const level of THINKING_LEVELS) {
         dropdown.addOption(level, THINKING_LEVEL_LABELS[level]);
       }
@@ -469,35 +634,35 @@ var DeepSidianSettingTab = class extends import_obsidian2.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian2.Setting(containerEl).setName("\u547D\u4EE4\u6267\u884C\uFF08bash\uFF09").setDesc("\u4EC5\u684C\u9762\u7AEF\u3002\u5F00\u542F\u540E AI \u53EF\u5728\u5E93\u6839\u76EE\u5F55\u6267\u884C shell \u547D\u4EE4\uFF1B\u9AD8\u5371\u547D\u4EE4\u59CB\u7EC8\u88AB\u62E6\u622A\u3002\u9ED8\u8BA4\u5173\u95ED\u3002").addToggle((toggle) => {
+    new import_obsidian2.Setting(containerEl).setName(t("bash")).setDesc(t("bashDesc")).addToggle((toggle) => {
       toggle.setValue(this.plugin.settings.enableBash).onChange(async (value) => {
         this.plugin.settings.enableBash = value;
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian2.Setting(containerEl).setName("\u81EA\u52A8\u6279\u51C6\u547D\u4EE4").setDesc("\u5F00\u542F\u540E\u547D\u4EE4\u76F4\u63A5\u6267\u884C\u3001\u4E0D\u518D\u9010\u6761\u5F39\u7A97\u786E\u8BA4\uFF08YOLO\uFF0C\u8C28\u614E\u4F7F\u7528\uFF09\u3002\u5173\u95ED\u65F6\u6BCF\u6761\u547D\u4EE4\u90FD\u8981\u4F60\u70B9\u786E\u8BA4\u3002").addToggle((toggle) => {
+    new import_obsidian2.Setting(containerEl).setName(t("bashAuto")).setDesc(t("bashAutoDesc")).addToggle((toggle) => {
       toggle.setValue(this.plugin.settings.bashAutoApprove).onChange(async (value) => {
         this.plugin.settings.bashAutoApprove = value;
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian2.Setting(containerEl).setName("\u8FDE\u63A5\u6D4B\u8BD5").setDesc("\u7528\u5F53\u524D\u914D\u7F6E\u5411 DeepSeek \u53D1\u9001\u4E00\u6761\u5F88\u77ED\u7684\u6D4B\u8BD5\u6D88\u606F\u3002").addButton((button) => {
-      button.setButtonText("\u6D4B\u8BD5\u8FDE\u63A5").setCta().onClick(async () => {
+    new import_obsidian2.Setting(containerEl).setName(t("testConn")).setDesc(t("testConnDesc")).addButton((button) => {
+      button.setButtonText(t("testBtn")).setCta().onClick(async () => {
         button.setDisabled(true);
-        button.setButtonText("\u6D4B\u8BD5\u4E2D...");
+        button.setButtonText(t("testing"));
         try {
           await this.plugin.testConnection();
         } catch (error) {
           new import_obsidian2.Notice(error instanceof Error ? error.message : String(error));
         } finally {
           button.setDisabled(false);
-          button.setButtonText("\u6D4B\u8BD5\u8FDE\u63A5");
+          button.setButtonText(t("testBtn"));
         }
       });
     });
   }
   addWritePermissionToggle(containerEl, key, label) {
-    new import_obsidian2.Setting(containerEl).setName(label).setDesc("\u4EC5\u5728\u201C\u5141\u8BB8 AI \u5199\u5165\u7B14\u8BB0\u201D\u603B\u5F00\u5173\u5F00\u542F\u65F6\u751F\u6548\u3002").addToggle((toggle) => {
+    new import_obsidian2.Setting(containerEl).setName(label).setDesc(this.t("permDependsOn")).addToggle((toggle) => {
       toggle.setValue(this.plugin.settings.writePermissions[key]).onChange(async (value) => {
         this.plugin.settings.writePermissions[key] = value;
         await this.plugin.saveSettings();
@@ -2497,7 +2662,10 @@ var MAX_HISTORY_MESSAGES = 20;
 var CONTEXT_BUDGET_TOKENS = 6e4;
 var COMPACT_AT_RATIO = 0.85;
 var KEEP_RECENT_MESSAGES = 8;
-var SYSTEM_PROMPT = `\u4F60\u662F DeepSidian\uFF0C\u4F4F\u5728\u7528\u6237 Obsidian \u77E5\u8BC6\u5E93\u91CC\u7684\u534F\u4F5C\u4F19\u4F34\u2014\u2014\u65E2\u80FD\u804A\uFF0C\u4E5F\u80FD\u8BFB\u5199\u7B14\u8BB0\u3001\u67E5\u5E93\u3001\u6293\u7F51\u9875\u3001\u770B\u56FE\u3001\u6267\u884C\u547D\u4EE4\u3001\u6D3E\u5DE5\u5177\u5E72\u6D3B\u3002\u4E2D\u6587\u4F18\u5148\uFF0C\u8BED\u6C14\u81EA\u7136\u4E0D\u673A\u68B0\uFF1B\u7B80\u5355\u7684\u95EE\u9898\u5C31\u76F4\u63A5\u3001\u7B80\u77ED\u5730\u7B54\uFF0C\u522B\u957F\u7BC7\u5927\u8BBA\uFF0C\u590D\u6742\u7684\u4E8B\u624D\u5C55\u5F00\u3002
+var SYSTEM_PROMPTS = {
+  zh: `\u59CB\u7EC8\u7528\u4E2D\u6587\u56DE\u7B54\u3002
+
+\u4F60\u662F DeepSidian\uFF0C\u4F4F\u5728\u7528\u6237 Obsidian \u77E5\u8BC6\u5E93\u91CC\u7684\u534F\u4F5C\u4F19\u4F34\u2014\u2014\u65E2\u80FD\u804A\uFF0C\u4E5F\u80FD\u8BFB\u5199\u7B14\u8BB0\u3001\u67E5\u5E93\u3001\u6293\u7F51\u9875\u3001\u770B\u56FE\u3001\u6267\u884C\u547D\u4EE4\u3001\u6D3E\u5DE5\u5177\u5E72\u6D3B\u3002\u8BED\u6C14\u81EA\u7136\u4E0D\u673A\u68B0\uFF1B\u7B80\u5355\u7684\u95EE\u9898\u5C31\u76F4\u63A5\u3001\u7B80\u77ED\u5730\u7B54\uFF0C\u522B\u957F\u7BC7\u5927\u8BBA\uFF0C\u590D\u6742\u7684\u4E8B\u624D\u5C55\u5F00\u3002
 
 \u600E\u4E48\u601D\u8003\uFF08\u5185\u5316\u5373\u53EF\uFF0C\u4E0D\u7528\u5FF5\u51FA\u6765\uFF09\uFF1A
 - \u5148\u5206\u6E05\u8FD9\u662F\u5173\u4E8E\u7528\u6237\u81EA\u5DF1\u7684\u4E16\u754C\uFF08\u4ED6\u7684\u7B14\u8BB0\u3001\u9879\u76EE\u3001\u672F\u8BED\u3001\u51B3\u5B9A\uFF09\u8FD8\u662F\u901A\u7528\u77E5\u8BC6\u3002\u524D\u8005\u9ED8\u8BA4\u5148\u67E5\u5E93\u518D\u8BF4\uFF08search_notes / read_file / \u5F53\u524D\u7B14\u8BB0\uFF09\uFF0C\u522B\u51ED\u5370\u8C61\u7F16\uFF1B\u540E\u8005\u76F4\u63A5\u7B54\u3002
@@ -2512,7 +2680,26 @@ var SYSTEM_PROMPT = `\u4F60\u662F DeepSidian\uFF0C\u4F4F\u5728\u7528\u6237 Obsid
 
 \u4F60\u6CA1\u6709\u8054\u7F51\u641C\u7D22\uFF1A\u7528\u6237\u53EA\u7ED9\u4E3B\u9898\u3001\u6CA1\u7ED9\u94FE\u63A5\u65F6\uFF0C\u8BF4\u660E\u4F60\u641C\u4E0D\u4E86\u3001\u53EF\u57FA\u4E8E\u5DF2\u6709\u77E5\u8BC6\u56DE\u7B54\uFF0C\u5E76\u8BF7\u4ED6\u7ED9 URL \u8BA9\u4F60\u7528 web_fetch \u6293\u53D6\u3002
 
-\u6DF1\u6D45\u968F\u4EFB\u52A1\u8D70\uFF1A\u8BB0\u4E00\u7B14\u3001\u627E\u67D0\u7BC7\u3001\u7B80\u5355\u95EE\u7B54\u5C31\u76F4\u7ED9\uFF1B\u8DE8\u591A\u7BC7\u7684\u7EFC\u5408\u3001\u6574\u7406\u3001\u642D\u7ED3\u6784\u624D\u503C\u5F97\u591A\u6B65\u6DF1\u60F3\uFF08\u5148\u68C0\u7D22\u94FA\u6599 \u2192 \u518D\u5F52\u7EB3 \u2192 \u518D\u4E0B\u7ED3\u8BBA\uFF09\uFF0C\u8FD9\u79CD\u65F6\u5019\u7528 todo_write \u5217\u6E05\u5355\u9010\u9879\u63A8\u8FDB\u3001\u5168\u90E8\u5B8C\u6210\u524D\u4E0D\u6536\u5C3E\uFF0C\u5B50\u95EE\u9898\u5F7C\u6B64\u72EC\u7ACB\u6216\u8981\u7FFB\u5927\u91CF\u8D44\u6599\u5C31\u7528 dispatch_agent \u6D3E\u5B50\u4EFB\u52A1\u3001\u53EA\u53D6\u5B83\u7684\u7ED3\u8BBA\u3002`;
+\u6DF1\u6D45\u968F\u4EFB\u52A1\u8D70\uFF1A\u8BB0\u4E00\u7B14\u3001\u627E\u67D0\u7BC7\u3001\u7B80\u5355\u95EE\u7B54\u5C31\u76F4\u7ED9\uFF1B\u8DE8\u591A\u7BC7\u7684\u7EFC\u5408\u3001\u6574\u7406\u3001\u642D\u7ED3\u6784\u624D\u503C\u5F97\u591A\u6B65\u6DF1\u60F3\uFF08\u5148\u68C0\u7D22\u94FA\u6599 \u2192 \u518D\u5F52\u7EB3 \u2192 \u518D\u4E0B\u7ED3\u8BBA\uFF09\uFF0C\u8FD9\u79CD\u65F6\u5019\u7528 todo_write \u5217\u6E05\u5355\u9010\u9879\u63A8\u8FDB\u3001\u5168\u90E8\u5B8C\u6210\u524D\u4E0D\u6536\u5C3E\uFF0C\u5B50\u95EE\u9898\u5F7C\u6B64\u72EC\u7ACB\u6216\u8981\u7FFB\u5927\u91CF\u8D44\u6599\u5C31\u7528 dispatch_agent \u6D3E\u5B50\u4EFB\u52A1\u3001\u53EA\u53D6\u5B83\u7684\u7ED3\u8BBA\u3002`,
+  en: `Always reply to the user in English, even if some of these instructions or the context below are written in another language.
+
+You are DeepSidian, a collaborator living inside the user's Obsidian vault \u2014 you can chat, and also read/write notes, search the vault, fetch web pages, read images, run commands, and dispatch tools. Keep a natural, non-robotic tone; answer simple questions directly and briefly, and only expand for complex ones.
+
+How to think (internalize, don't narrate):
+- First decide whether the question is about the user's own world (their notes, projects, terms, decisions) or general knowledge. For the former, search the vault first (search_notes / read_file / current note) rather than guessing; for the latter, just answer.
+- When you use vault or web content, cite the source (note path, [[wikilink]], or source URL) so the user can verify; if you rely on your own general knowledge, say so \u2014 never let unverified claims pose as the user's notes.
+- When you notice a genuinely relevant note, surface it with a [[wikilink]] to help connect their knowledge \u2014 but only when it actually helps; don't spam.
+
+Be careful with writes (you're editing notes the user has built up over time, not a scratchpad):
+- Only write when the user clearly asks; before writing, state in one line what you'll change and to what.
+- Follow the existing structure and the user's voice, change the smallest scope, and don't reorganize or restyle on your own; before creating a note, search for duplicates and follow the user's folder/tag conventions.
+- If intent is unclear and a write is involved, ask one question first; for plain reads/answers, don't keep asking \u2014 pick a sensible default.
+- Only claim "written / fetched / done" after a tool actually succeeds; if you can't (missing URL, fetch-proxy not running, no write permission, etc.), plainly say "not done yet + reason + next step" \u2014 never present a plan as completed, and never fabricate results.
+
+You have no web search: when the user gives only a topic with no link, say you can't search, answer from existing knowledge, and ask for a URL so you can web_fetch it.
+
+Match depth to the task: capture, lookup, and simple Q&A \u2192 answer directly; synthesis, tidying, or building structure across many notes \u2192 think in steps (gather first \u2192 group \u2192 conclude), using todo_write to track items (don't wrap up until they're done) and dispatch_agent for independent sub-questions or heavy reading (take only its conclusion).`
+};
 var SUBAGENT_PROMPTS = {
   explore: `\u4F60\u662F DeepSidian \u7684\u53EA\u8BFB\u8C03\u7814\u5B50 Agent\uFF1A\u53EA\u80FD\u8BFB\u3001\u641C\u3001\u5217\u4E3E\u5E93\u5185\u7B14\u8BB0\u548C\u6293\u7F51\u9875\uFF0C\u4E0D\u80FD\u5199\u3002\u9AD8\u6548\u5B9A\u4F4D\u4FE1\u606F\uFF0C\u5B8C\u6210\u540E\u7528\u4E2D\u6587\u7ED9\u51FA\u7ED3\u6784\u5316\u3001\u7CBE\u70BC\u7684\u7ED3\u8BBA\uFF08\u5173\u952E\u53D1\u73B0 + \u6D89\u53CA\u7684\u7B14\u8BB0\u8DEF\u5F84/\u94FE\u63A5\uFF09\uFF0C\u4E0D\u5806\u539F\u6587\u3002\u53EA\u6709\u5DE5\u5177\u771F\u6B63\u6210\u529F\u624D\u58F0\u79F0\u8BFB\u5230/\u641C\u5230/\u6293\u5230\uFF0C\u5426\u5219\u76F4\u8BF4\u6CA1\u62FF\u5230\u3002`,
   summarize: `\u4F60\u662F DeepSidian \u7684\u53EA\u8BFB\u6458\u8981\u5B50 Agent\uFF1A\u8BFB\u53D6\u6307\u5B9A\u7B14\u8BB0/\u6587\u4EF6\u540E\uFF0C\u4EA7\u51FA\u5FE0\u5B9E\u3001\u7D27\u51D1\u7684\u4E2D\u6587\u6458\u8981\uFF0C\u4FDD\u7559\u5173\u952E\u4E8B\u5B9E\u3001\u6570\u636E\u4E0E\u7ED3\u8BBA\uFF0C\u53BB\u5197\u4F59\uFF0C\u5C3D\u91CF\u7559\u4F4F\u7528\u6237\u539F\u6587\u91CC\u7684\u8981\u70B9\u4E0E\u63AA\u8F9E\u3002\u8BFB\u4E0D\u5230\u5C31\u76F4\u8BF4\uFF0C\u522B\u7F16\u3002`,
@@ -2668,6 +2855,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     this.currentContextTokens = 0;
     this.compacting = false;
     this.turnFirstTokenAt = 0;
+    this.t = createTranslator("zh");
   }
   getViewType() {
     return VIEW_TYPE_DEEPSIDIAN;
@@ -2691,7 +2879,12 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
   async onClose() {
     await this.persistCurrentSession();
   }
+  /** 语言等设置变更后由插件调用，重建整个侧栏 UI。 */
+  rerender() {
+    this.render();
+  }
   render() {
+    this.t = createTranslator(this.plugin.settings.language);
     const container = this.containerEl.children[1];
     container.empty();
     container.addClass("deepsidian-view");
@@ -2741,22 +2934,22 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     this.inputEl = inputShellEl.createEl("textarea", {
       cls: "deepsidian-input",
       attr: {
-        placeholder: "How can I help you today?"
+        placeholder: this.t("inputPlaceholder")
       }
     });
     const composerFooterEl = inputShellEl.createDiv({ cls: "deepsidian-composer-footer" });
     const footerLeftEl = composerFooterEl.createDiv({ cls: "deepsidian-composer-meta" });
     const modelPill = footerLeftEl.createEl("button", {
       cls: "deepsidian-pill deepsidian-model-pill",
-      attr: { type: "button", title: "\u9009\u62E9\u6A21\u578B" }
+      attr: { type: "button", title: this.t("pickModel") }
     });
     const renderModelPill = () => modelPill.setText(this.plugin.settings.model.replace("deepseek-v4-", ""));
     renderModelPill();
     modelPill.addEventListener("click", (event) => {
       const menu = new import_obsidian4.Menu();
       const hints = {
-        "deepseek-v4-flash": "\u4FBF\u5B9C\u5FEB\uFF0C\u65E5\u5E38\u9996\u9009",
-        "deepseek-v4-pro": "\u66F4\u5F3A\uFF0C\u590D\u6742\u4EFB\u52A1"
+        "deepseek-v4-flash": this.t("modelHintFlash"),
+        "deepseek-v4-pro": this.t("modelHintPro")
       };
       for (const model of MODEL_OPTIONS) {
         menu.addItem((item) => {
@@ -2773,7 +2966,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     });
     const thinkingPill = footerLeftEl.createEl("button", {
       cls: "deepsidian-pill deepsidian-thinking-pill",
-      attr: { type: "button", title: "\u9009\u62E9\u601D\u8003\u6DF1\u5EA6" }
+      attr: { type: "button", title: this.t("pickThinking") }
     });
     const renderThinkingPill = () => {
       thinkingPill.empty();
@@ -2786,7 +2979,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       const menu = new import_obsidian4.Menu();
       for (const level of THINKING_LEVELS) {
         const rounds = THINKING_CONFIG[level].reflectionRounds;
-        const hint = rounds === 0 ? "\u4E0D\u601D\u8003\uFF0C\u6700\u5FEB" : `\u601D\u8003 + ${rounds} \u8F6E\u81EA\u6211\u53CD\u601D`;
+        const hint = rounds === 0 ? this.t("thinkHintOff") : this.plugin.settings.language === "en" ? `thinking + ${rounds} reflection${rounds > 1 ? "s" : ""}` : `\u601D\u8003 + ${rounds} \u8F6E\u81EA\u6211\u53CD\u601D`;
         menu.addItem((item) => {
           item.setTitle(`${THINKING_LEVEL_LABELS[level]} \xB7 ${hint}`).setChecked(this.plugin.settings.thinkingLevel === level).onClick(async () => {
             this.plugin.settings.thinkingLevel = level;
@@ -2807,7 +3000,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       }
     });
     this.writeToggleEl.checked = this.plugin.settings.enableVaultWrites;
-    writeLabelEl.createSpan({ text: "\u5199\u5165" });
+    writeLabelEl.createSpan({ text: this.t("write") });
     this.writeToggleEl.addEventListener("change", async () => {
       const on = this.writeToggleEl.checked;
       this.plugin.settings.enableVaultWrites = on;
@@ -2821,7 +3014,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     });
     const bashToggle = bashLabelEl.createEl("input", { attr: { type: "checkbox" } });
     bashToggle.checked = this.plugin.settings.enableBash;
-    bashLabelEl.createSpan({ text: "\u547D\u4EE4" });
+    bashLabelEl.createSpan({ text: this.t("command") });
     bashToggle.addEventListener("change", async () => {
       this.plugin.settings.enableBash = bashToggle.checked;
       await this.plugin.saveSettings();
@@ -2829,8 +3022,8 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     this.sendButtonEl = composerActionsEl.createEl("button", {
       cls: "deepsidian-send",
       attr: {
-        "aria-label": "\u53D1\u9001",
-        "title": "\u53D1\u9001"
+        "aria-label": this.t("send"),
+        "title": this.t("send")
       }
     });
     (0, import_obsidian4.setIcon)(this.sendButtonEl, "send-horizontal");
@@ -2870,8 +3063,8 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     const newChatButton = this.sessionBarEl.createEl("button", {
       cls: "deepsidian-session-button",
       attr: {
-        "aria-label": "New Chat",
-        "title": "New Chat"
+        "aria-label": this.t("newChat"),
+        "title": this.t("newChat")
       }
     });
     (0, import_obsidian4.setIcon)(newChatButton, "plus");
@@ -2881,8 +3074,8 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     const historyButton = this.sessionBarEl.createEl("button", {
       cls: "deepsidian-session-button",
       attr: {
-        "aria-label": "Chat history",
-        "title": "Chat history"
+        "aria-label": this.t("history"),
+        "title": this.t("history")
       }
     });
     (0, import_obsidian4.setIcon)(historyButton, "history");
@@ -2910,7 +3103,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     await this.persistCurrentSession(void 0, false);
     const session = await this.plugin.loadSession(sessionId);
     if (!session) {
-      new import_obsidian4.Notice("\u6CA1\u6709\u627E\u5230\u8FD9\u4E2A\u4F1A\u8BDD\u3002");
+      new import_obsidian4.Notice(this.t("sessionNotFound"));
       return;
     }
     this.currentSession = session;
@@ -2955,10 +3148,10 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
         alt: ""
       }
     });
-    this.emptyStateEl.createDiv({ cls: "deepsidian-empty-title", text: "How's it going?" });
+    this.emptyStateEl.createDiv({ cls: "deepsidian-empty-title", text: this.t("emptyTitle") });
     this.emptyStateEl.createDiv({
       cls: "deepsidian-empty-subtitle",
-      text: "\u8BFB\u7B14\u8BB0\u3001\u641C\u5E93\u3001\u6539\u5199\u9009\u533A\u3001\u6293\u7F51\u9875\uFF0C\u6216\u8005\u8BA9 DeepSidian \u76F4\u63A5\u6574\u7406\u5F53\u524D\u6587\u4EF6\u3002"
+      text: this.t("emptySubtitle")
     });
   }
   renderInlineSettings() {
@@ -2998,7 +3191,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       await this.plugin.saveSettings();
     });
     const modelRow = this.settingsPanelEl.createDiv({ cls: "deepsidian-setting-row" });
-    modelRow.createEl("label", { text: "\u6A21\u578B" });
+    modelRow.createEl("label", { text: this.t("inlineModel") });
     const modelSelect = modelRow.createEl("select");
     for (const model of ["deepseek-v4-flash", "deepseek-v4-pro"]) {
       modelSelect.createEl("option", {
@@ -3016,7 +3209,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     const contextLabel = toggleRow.createEl("label");
     const contextToggle = contextLabel.createEl("input", { attr: { type: "checkbox" } });
     contextToggle.checked = this.plugin.settings.includeActiveNote;
-    contextLabel.createSpan({ text: "\u81EA\u52A8\u5E26\u4E0A\u5F53\u524D\u7B14\u8BB0" });
+    contextLabel.createSpan({ text: this.t("inlineIncludeNote") });
     contextToggle.addEventListener("change", async () => {
       this.plugin.settings.includeActiveNote = contextToggle.checked;
       await this.plugin.saveSettings();
@@ -3024,7 +3217,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     const writeLabel = toggleRow.createEl("label");
     const writeToggle = writeLabel.createEl("input", { attr: { type: "checkbox" } });
     writeToggle.checked = this.plugin.settings.enableVaultWrites;
-    writeLabel.createSpan({ text: "\u5141\u8BB8\u5199\u5165\u7B14\u8BB0\uFF08\u603B\u5F00\u5173\uFF09" });
+    writeLabel.createSpan({ text: this.t("inlineAllowWrite") });
     writeToggle.addEventListener("change", async () => {
       const on = writeToggle.checked;
       this.plugin.settings.enableVaultWrites = on;
@@ -3036,19 +3229,19 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       this.renderInlineSettings();
     });
     const permissionRow = this.settingsPanelEl.createDiv({ cls: "deepsidian-setting-row deepsidian-setting-row-inline deepsidian-write-permissions" });
-    this.renderInlineWritePermission(permissionRow, "createNotes", "\u65B0\u5EFA");
-    this.renderInlineWritePermission(permissionRow, "editNotes", "\u7F16\u8F91");
-    this.renderInlineWritePermission(permissionRow, "appendActiveNote", "\u8FFD\u52A0");
-    this.renderInlineWritePermission(permissionRow, "insertAtCursor", "\u9009\u533A");
-    this.renderInlineWritePermission(permissionRow, "downloadAttachments", "\u9644\u4EF6");
+    this.renderInlineWritePermission(permissionRow, "createNotes", this.t("permShortCreate"));
+    this.renderInlineWritePermission(permissionRow, "editNotes", this.t("permShortEdit"));
+    this.renderInlineWritePermission(permissionRow, "appendActiveNote", this.t("permShortAppend"));
+    this.renderInlineWritePermission(permissionRow, "insertAtCursor", this.t("permShortInsert"));
+    this.renderInlineWritePermission(permissionRow, "downloadAttachments", this.t("permShortDownload"));
     const testButton = this.settingsPanelEl.createEl("button", { cls: "deepsidian-secondary-button" });
-    testButton.setText("\u6D4B\u8BD5\u8FDE\u63A5");
+    testButton.setText(this.t("testBtn"));
     testButton.addEventListener("click", async () => {
       testButton.disabled = true;
-      testButton.setText("\u6D4B\u8BD5\u4E2D...");
+      testButton.setText(this.t("testing"));
       await this.plugin.testConnection();
       testButton.disabled = false;
-      testButton.setText("\u6D4B\u8BD5\u8FDE\u63A5");
+      testButton.setText(this.t("testBtn"));
     });
   }
   setAllWritePermissions(value) {
@@ -3074,7 +3267,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       return;
     }
     if (!this.plugin.settings.apiKey.trim()) {
-      new import_obsidian4.Notice("\u8BF7\u5148\u70B9\u51FB\u4FA7\u8FB9\u680F\u53F3\u4E0A\u89D2\u8BBE\u7F6E\uFF0C\u586B\u5199 DeepSeek API Key\u3002");
+      new import_obsidian4.Notice(this.t("needApiKey"));
       this.settingsOpen = true;
       this.renderInlineSettings();
       return;
@@ -3089,7 +3282,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     }
     this.appendBubble("user", userText);
     const pendingEl = this.transcriptEl.createDiv({ cls: "deepsidian-bubble deepsidian-bubble-assistant" });
-    this.renderThinkingIndicator(pendingEl, "\u601D\u8003\u4E2D");
+    this.renderThinkingIndicator(pendingEl, this.t("thinking"));
     this.transcriptEl.scrollTo({ top: this.transcriptEl.scrollHeight });
     const thinkingStart = Date.now();
     this.turnFirstTokenAt = 0;
@@ -3106,7 +3299,7 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       this.currentContextTokens = result.contextTokens || this.currentContextTokens;
       this.addUsage(result.usage);
       if (abort.signal.aborted) {
-        await this.renderMarkdown(pendingEl, result.content || "\u5DF2\u4E2D\u65AD\u3002");
+        await this.renderMarkdown(pendingEl, result.content || this.t("interrupted"));
         return;
       }
       this.conversation.push({ role: "user", content: userText, turnId });
@@ -3118,12 +3311,12 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
       void this.maybeCompactHistory();
     } catch (error) {
       if (abort.signal.aborted) {
-        pendingEl.setText("\u5DF2\u4E2D\u65AD\u3002");
+        pendingEl.setText(this.t("interrupted"));
         return;
       }
       const message = error instanceof Error ? error.message : String(error);
-      pendingEl.setText(`\u51FA\u9519\u4E86\uFF1A${message}`);
-      new import_obsidian4.Notice(`DeepSidian \u8BF7\u6C42\u5931\u8D25\uFF1A${message}`, 8e3);
+      pendingEl.setText(this.t("requestFailed") + message);
+      new import_obsidian4.Notice(this.t("requestFailed") + message, 8e3);
     } finally {
       window.clearInterval(thinkTimer);
       this.activeTurnId = null;
@@ -3152,7 +3345,8 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
         onTodoUpdate: (markdown) => this.renderTodoPanel(markdown),
         onReflect: (round, total) => {
           typewriter.reset();
-          this.renderThinkingIndicator(pendingEl, `\u7B2C ${round}/${total} \u8F6E\u53CD\u601D`);
+          const reflectLabel = this.plugin.settings.language === "en" ? `Reflecting ${round}/${total}` : `\u7B2C ${round}/${total} \u8F6E\u53CD\u601D`;
+          this.renderThinkingIndicator(pendingEl, reflectLabel);
         },
         onAssistantDelta: (content) => {
           if (!this.turnFirstTokenAt) {
@@ -3311,11 +3505,11 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
     return context;
   }
   async buildMessages(userText) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e;
     const messages = [
       {
         role: "system",
-        content: SYSTEM_PROMPT
+        content: (_a = SYSTEM_PROMPTS[this.plugin.settings.language]) != null ? _a : SYSTEM_PROMPTS.zh
       }
     ];
     const activeNoteContext = await this.plugin.getActiveNoteContext();
@@ -3339,15 +3533,21 @@ var DeepSidianView = class extends import_obsidian4.ItemView {
         content: memoryContext
       });
     }
-    const summarizedCount = Math.min((_b = (_a = this.currentSession) == null ? void 0 : _a.summarizedCount) != null ? _b : 0, this.conversation.length);
-    const summary = (_d = (_c = this.currentSession) == null ? void 0 : _c.summary) == null ? void 0 : _d.trim();
+    const summarizedCount = Math.min((_c = (_b = this.currentSession) == null ? void 0 : _b.summarizedCount) != null ? _c : 0, this.conversation.length);
+    const summary = (_e = (_d = this.currentSession) == null ? void 0 : _d.summary) == null ? void 0 : _e.trim();
+    const isEn = this.plugin.settings.language === "en";
     if (summary) {
       messages.push({
         role: "system",
-        content: `\u5BF9\u8BDD\u524D\u60C5\u63D0\u8981\uFF08\u65E9\u671F\u5185\u5BB9\u7684\u538B\u7F29\uFF0C\u4EC5\u4F5C\u5EF6\u7EED\u53C2\u8003\uFF09\uFF1A
+        content: isEn ? `Conversation summary so far (compressed earlier turns, for continuity only):
+${summary}` : `\u5BF9\u8BDD\u524D\u60C5\u63D0\u8981\uFF08\u65E9\u671F\u5185\u5BB9\u7684\u538B\u7F29\uFF0C\u4EC5\u4F5C\u5EF6\u7EED\u53C2\u8003\uFF09\uFF1A
 ${summary}`
       });
     }
+    messages.push({
+      role: "system",
+      content: isEn ? "Reminder: reply to the user in English, regardless of the language of the notes or context above." : "\u63D0\u9192\uFF1A\u59CB\u7EC8\u7528\u4E2D\u6587\u56DE\u7B54\u3002"
+    });
     const recentHistory = this.conversation.slice(summarizedCount).slice(-MAX_HISTORY_MESSAGES);
     messages.push(...recentHistory);
     messages.push({
@@ -3385,7 +3585,7 @@ ${summary}`
     cardEl.open = true;
     const summaryEl = cardEl.createEl("summary");
     summaryEl.createSpan({ cls: "deepsidian-tool-name", text: toolCall.function.name });
-    const statusEl = summaryEl.createSpan({ cls: "deepsidian-tool-status", text: "\u8FD0\u884C\u4E2D" });
+    const statusEl = summaryEl.createSpan({ cls: "deepsidian-tool-status", text: this.t("toolRunning") });
     const argsEl = cardEl.createEl("pre", { cls: "deepsidian-tool-args" });
     argsEl.setText(JSON.stringify(args, null, 2));
     const resultEl = cardEl.createEl("pre", { cls: "deepsidian-tool-result" });
@@ -3396,7 +3596,7 @@ ${summary}`
   finishToolCard(elements, ok, content) {
     elements.cardEl.removeClass("is-running");
     elements.cardEl.addClass(ok ? "is-ok" : "is-error");
-    elements.statusEl.setText(ok ? "\u5B8C\u6210" : "\u5931\u8D25");
+    elements.statusEl.setText(ok ? this.t("toolDone") : this.t("toolFailed"));
     elements.resultEl.setText(content);
     elements.cardEl.open = false;
     if (elements.runId) {
@@ -3497,7 +3697,7 @@ ${summary}`
       run.finishedAt = Date.now();
       cardEl.removeClass("is-running");
       cardEl.addClass(result.ok ? "is-ok" : "is-error");
-      statusEl == null ? void 0 : statusEl.setText(result.ok ? "\u5B8C\u6210" : "\u5931\u8D25");
+      statusEl == null ? void 0 : statusEl.setText(result.ok ? this.t("toolDone") : this.t("toolFailed"));
       resultEl == null ? void 0 : resultEl.setText(result.content);
       this.renderToolActionButtons(cardEl, run);
       await this.persistCurrentSession();
@@ -3515,7 +3715,10 @@ ${summary}`
     if (thinkingMs && thinkingMs > 0) {
       const badge = bubbleEl.createDiv({ cls: "deepsidian-think-badge" });
       this.appendWhaleImg(badge, 13);
-      badge.createSpan({ text: `\u601D\u8003 ${(thinkingMs / 1e3).toFixed(1)}s` });
+      const seconds = (thinkingMs / 1e3).toFixed(1);
+      badge.createSpan({
+        text: this.plugin.settings.language === "en" ? `Thought ${seconds}s` : `\u601D\u8003 ${seconds}s`
+      });
       bubbleEl.insertBefore(badge, bubbleEl.firstChild);
     }
     this.addCopyButton(bubbleEl, content);
@@ -3549,7 +3752,7 @@ ${summary}`
     }
     const button = bubbleEl.createEl("button", {
       cls: "deepsidian-copy-button",
-      attr: { "aria-label": "\u590D\u5236", title: "\u590D\u5236" }
+      attr: { "aria-label": this.t("copy"), title: this.t("copy") }
     });
     (0, import_obsidian4.setIcon)(button, "copy");
     button.addEventListener("click", async (event) => {
@@ -3568,8 +3771,8 @@ ${summary}`
     this.inputEl.disabled = isBusy;
     this.sendButtonEl.empty();
     (0, import_obsidian4.setIcon)(this.sendButtonEl, isBusy ? "square" : "send-horizontal");
-    this.sendButtonEl.setAttribute("title", isBusy ? "\u505C\u6B62" : "\u53D1\u9001");
-    this.sendButtonEl.setAttribute("aria-label", isBusy ? "\u505C\u6B62" : "\u53D1\u9001");
+    this.sendButtonEl.setAttribute("title", isBusy ? this.t("stop") : this.t("send"));
+    this.sendButtonEl.setAttribute("aria-label", isBusy ? this.t("stop") : this.t("send"));
   }
   confirmCommand(command, description) {
     return new Promise((resolve) => {
@@ -3645,10 +3848,13 @@ ${summary}`
     if (!selection) {
       return null;
     }
+    const isEn = this.plugin.settings.language === "en";
+    const truncNote = isEn ? "[Selection is long; truncated.]" : "[\u9009\u533A\u8FC7\u957F\uFF0C\u5DF2\u622A\u65AD\u3002]";
     const clipped = selection.length > 4e3 ? `${selection.slice(0, 4e3)}
 
-[\u9009\u533A\u8FC7\u957F\uFF0C\u5DF2\u622A\u65AD\u3002]` : selection;
-    return `\u7528\u6237\u5F53\u524D\u5728\u7F16\u8F91\u5668\u4E2D\u9009\u4E2D\u7684\u6587\u672C\uFF1A
+${truncNote}` : selection;
+    return isEn ? `Text the user has selected in the editor:
+${clipped}` : `\u7528\u6237\u5F53\u524D\u5728\u7F16\u8F91\u5668\u4E2D\u9009\u4E2D\u7684\u6587\u672C\uFF1A
 ${clipped}`;
   }
   renderTodoPanel(markdown) {
@@ -3657,7 +3863,7 @@ ${clipped}`;
     }
     this.todoPanelEl.empty();
     this.todoPanelEl.removeClass("is-hidden");
-    this.todoPanelEl.createDiv({ cls: "deepsidian-todo-header", text: "\u4EFB\u52A1\u8FDB\u5EA6" });
+    this.todoPanelEl.createDiv({ cls: "deepsidian-todo-header", text: this.t("todoProgress") });
     const bodyEl = this.todoPanelEl.createDiv({ cls: "deepsidian-todo-body" });
     void this.renderMarkdown(bodyEl, markdown);
   }
@@ -3812,21 +4018,24 @@ ${transcript}`
     if (!memory) {
       return null;
     }
-    const parts = ["DeepSidian \u4F1A\u8BDD\u5DE5\u4F5C\u8BB0\u5FC6\uFF08\u538B\u7F29\u4E0A\u4E0B\u6587\uFF0C\u53EA\u4F5C\u4EFB\u52A1\u5EF6\u7EED\u53C2\u8003\uFF09\uFF1A"];
+    const isEn = this.plugin.settings.language === "en";
+    const sep = isEn ? "; " : "\uFF1B";
+    const L = isEn ? { head: "DeepSidian session working memory (compressed context, for task continuity only):", goal: "Current goal: ", files: "Related files: ", completed: "Completed: ", blockers: "Failed/blocked: ", notes: "Key conclusions: " } : { head: "DeepSidian \u4F1A\u8BDD\u5DE5\u4F5C\u8BB0\u5FC6\uFF08\u538B\u7F29\u4E0A\u4E0B\u6587\uFF0C\u53EA\u4F5C\u4EFB\u52A1\u5EF6\u7EED\u53C2\u8003\uFF09\uFF1A", goal: "\u5F53\u524D\u76EE\u6807\uFF1A", files: "\u76F8\u5173\u6587\u4EF6\uFF1A", completed: "\u5DF2\u5B8C\u6210\uFF1A", blockers: "\u5931\u8D25/\u963B\u585E\uFF1A", notes: "\u5173\u952E\u7ED3\u8BBA\uFF1A" };
+    const parts = [L.head];
     if (memory.currentGoal) {
-      parts.push(`\u5F53\u524D\u76EE\u6807\uFF1A${memory.currentGoal}`);
+      parts.push(`${L.goal}${memory.currentGoal}`);
     }
     if (memory.files.length) {
-      parts.push(`\u76F8\u5173\u6587\u4EF6\uFF1A${memory.files.slice(-8).join("\uFF1B")}`);
+      parts.push(`${L.files}${memory.files.slice(-8).join(sep)}`);
     }
     if (memory.completed.length) {
-      parts.push(`\u5DF2\u5B8C\u6210\uFF1A${memory.completed.slice(-8).join("\uFF1B")}`);
+      parts.push(`${L.completed}${memory.completed.slice(-8).join(sep)}`);
     }
     if (memory.blockers.length) {
-      parts.push(`\u5931\u8D25/\u963B\u585E\uFF1A${memory.blockers.slice(-6).join("\uFF1B")}`);
+      parts.push(`${L.blockers}${memory.blockers.slice(-6).join(sep)}`);
     }
     if (memory.notes.length) {
-      parts.push(`\u5173\u952E\u7ED3\u8BBA\uFF1A${memory.notes.slice(-5).join("\uFF1B")}`);
+      parts.push(`${L.notes}${memory.notes.slice(-5).join(sep)}`);
     }
     return parts.length > 1 ? parts.join("\n") : null;
   }
@@ -3965,6 +4174,14 @@ var DeepSidianPlugin = class extends import_obsidian5.Plugin {
     }
     this.app.workspace.revealLeaf(leaf);
   }
+  refreshViews() {
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_DEEPSIDIAN)) {
+      const view = leaf.view;
+      if (view instanceof DeepSidianView) {
+        view.rerender();
+      }
+    }
+  }
   async loadSettings() {
     const loaded = await this.loadData();
     const hasWritePermissions = Boolean(loaded == null ? void 0 : loaded.writePermissions);
@@ -4097,10 +4314,15 @@ var DeepSidianPlugin = class extends import_obsidian5.Plugin {
       return null;
     }
     const content = await this.app.vault.cachedRead(file);
+    const isEn = this.settings.language === "en";
+    const truncNote = isEn ? "[Current note is long; truncated.]" : "[\u5F53\u524D\u7B14\u8BB0\u8FC7\u957F\uFF0C\u5DF2\u622A\u65AD\u3002]";
     const truncated = content.length > this.settings.maxContextCharacters ? `${content.slice(0, this.settings.maxContextCharacters)}
 
-[\u5F53\u524D\u7B14\u8BB0\u8FC7\u957F\uFF0C\u5DF2\u622A\u65AD\u3002]` : content;
-    return `\u5F53\u524D Obsidian \u7B14\u8BB0\u8DEF\u5F84\uFF1A${file.path}
+${truncNote}` : content;
+    return isEn ? `Current Obsidian note path: ${file.path}
+
+Current note content:
+${truncated}` : `\u5F53\u524D Obsidian \u7B14\u8BB0\u8DEF\u5F84\uFF1A${file.path}
 
 \u5F53\u524D\u7B14\u8BB0\u5185\u5BB9\uFF1A
 ${truncated}`;

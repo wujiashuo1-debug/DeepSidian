@@ -65,6 +65,15 @@ export default class DeepSidianPlugin extends Plugin {
     this.app.workspace.revealLeaf(leaf);
   }
 
+  refreshViews() {
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_DEEPSIDIAN)) {
+      const view = leaf.view;
+      if (view instanceof DeepSidianView) {
+        view.rerender();
+      }
+    }
+  }
+
   async loadSettings() {
     const loaded = await this.loadData() as Partial<DeepSidianSettings> | null;
     const hasWritePermissions = Boolean(loaded?.writePermissions);
@@ -236,10 +245,14 @@ export default class DeepSidianPlugin extends Plugin {
     }
 
     const content = await this.app.vault.cachedRead(file);
+    const isEn = this.settings.language === "en";
+    const truncNote = isEn ? "[Current note is long; truncated.]" : "[当前笔记过长，已截断。]";
     const truncated = content.length > this.settings.maxContextCharacters
-      ? `${content.slice(0, this.settings.maxContextCharacters)}\n\n[当前笔记过长，已截断。]`
+      ? `${content.slice(0, this.settings.maxContextCharacters)}\n\n${truncNote}`
       : content;
 
-    return `当前 Obsidian 笔记路径：${file.path}\n\n当前笔记内容：\n${truncated}`;
+    return isEn
+      ? `Current Obsidian note path: ${file.path}\n\nCurrent note content:\n${truncated}`
+      : `当前 Obsidian 笔记路径：${file.path}\n\n当前笔记内容：\n${truncated}`;
   }
 }

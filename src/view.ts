@@ -6,6 +6,7 @@ import {
   DeepSidianToolRun,
   DeepSidianUndoSnapshot,
   DeepSidianSession,
+  Lang,
   MODEL_OPTIONS,
   MODEL_PRICING,
   THINKING_CONFIG,
@@ -17,6 +18,7 @@ import {
   VIEW_TYPE_DEEPSIDIAN
 } from "./types";
 import { AgentLoop, RequiredToolGroup } from "./agentLoop";
+import { createTranslator, Translator } from "./i18n";
 import { AgentType, executeVaultTool, getToolsForAgentType, ToolContext, UndoSnapshotInput, VAULT_TOOL_DEFINITIONS, WriteConfirmationRequest } from "./vaultTools";
 
 const MAX_HISTORY_MESSAGES = 20;
@@ -25,7 +27,10 @@ const CONTEXT_BUDGET_TOKENS = 60000;
 const COMPACT_AT_RATIO = 0.85;
 const KEEP_RECENT_MESSAGES = 8;
 
-const SYSTEM_PROMPT = `你是 DeepSidian，住在用户 Obsidian 知识库里的协作伙伴——既能聊，也能读写笔记、查库、抓网页、看图、执行命令、派工具干活。中文优先，语气自然不机械；简单的问题就直接、简短地答，别长篇大论，复杂的事才展开。
+const SYSTEM_PROMPTS: Record<Lang, string> = {
+  zh: `始终用中文回答。
+
+你是 DeepSidian，住在用户 Obsidian 知识库里的协作伙伴——既能聊，也能读写笔记、查库、抓网页、看图、执行命令、派工具干活。语气自然不机械；简单的问题就直接、简短地答，别长篇大论，复杂的事才展开。
 
 怎么思考（内化即可，不用念出来）：
 - 先分清这是关于用户自己的世界（他的笔记、项目、术语、决定）还是通用知识。前者默认先查库再说（search_notes / read_file / 当前笔记），别凭印象编；后者直接答。
@@ -40,7 +45,26 @@ const SYSTEM_PROMPT = `你是 DeepSidian，住在用户 Obsidian 知识库里的
 
 你没有联网搜索：用户只给主题、没给链接时，说明你搜不了、可基于已有知识回答，并请他给 URL 让你用 web_fetch 抓取。
 
-深浅随任务走：记一笔、找某篇、简单问答就直给；跨多篇的综合、整理、搭结构才值得多步深想（先检索铺料 → 再归纳 → 再下结论），这种时候用 todo_write 列清单逐项推进、全部完成前不收尾，子问题彼此独立或要翻大量资料就用 dispatch_agent 派子任务、只取它的结论。`;
+深浅随任务走：记一笔、找某篇、简单问答就直给；跨多篇的综合、整理、搭结构才值得多步深想（先检索铺料 → 再归纳 → 再下结论），这种时候用 todo_write 列清单逐项推进、全部完成前不收尾，子问题彼此独立或要翻大量资料就用 dispatch_agent 派子任务、只取它的结论。`,
+  en: `Always reply to the user in English, even if some of these instructions or the context below are written in another language.
+
+You are DeepSidian, a collaborator living inside the user's Obsidian vault — you can chat, and also read/write notes, search the vault, fetch web pages, read images, run commands, and dispatch tools. Keep a natural, non-robotic tone; answer simple questions directly and briefly, and only expand for complex ones.
+
+How to think (internalize, don't narrate):
+- First decide whether the question is about the user's own world (their notes, projects, terms, decisions) or general knowledge. For the former, search the vault first (search_notes / read_file / current note) rather than guessing; for the latter, just answer.
+- When you use vault or web content, cite the source (note path, [[wikilink]], or source URL) so the user can verify; if you rely on your own general knowledge, say so — never let unverified claims pose as the user's notes.
+- When you notice a genuinely relevant note, surface it with a [[wikilink]] to help connect their knowledge — but only when it actually helps; don't spam.
+
+Be careful with writes (you're editing notes the user has built up over time, not a scratchpad):
+- Only write when the user clearly asks; before writing, state in one line what you'll change and to what.
+- Follow the existing structure and the user's voice, change the smallest scope, and don't reorganize or restyle on your own; before creating a note, search for duplicates and follow the user's folder/tag conventions.
+- If intent is unclear and a write is involved, ask one question first; for plain reads/answers, don't keep asking — pick a sensible default.
+- Only claim "written / fetched / done" after a tool actually succeeds; if you can't (missing URL, fetch-proxy not running, no write permission, etc.), plainly say "not done yet + reason + next step" — never present a plan as completed, and never fabricate results.
+
+You have no web search: when the user gives only a topic with no link, say you can't search, answer from existing knowledge, and ask for a URL so you can web_fetch it.
+
+Match depth to the task: capture, lookup, and simple Q&A → answer directly; synthesis, tidying, or building structure across many notes → think in steps (gather first → group → conclude), using todo_write to track items (don't wrap up until they're done) and dispatch_agent for independent sub-questions or heavy reading (take only its conclusion).`
+};
 
 const SUBAGENT_PROMPTS: Record<AgentType, string> = {
   explore: `你是 DeepSidian 的只读调研子 Agent：只能读、搜、列举库内笔记和抓网页，不能写。高效定位信息，完成后用中文给出结构化、精炼的结论（关键发现 + 涉及的笔记路径/链接），不堆原文。只有工具真正成功才声称读到/搜到/抓到，否则直说没拿到。`,
@@ -257,6 +281,7 @@ export class DeepSidianView extends ItemView {
   private currentContextTokens = 0;
   private compacting = false;
   private turnFirstTokenAt = 0;
+  private t: Translator = createTranslator("zh");
 
   constructor(leaf: WorkspaceLeaf, private plugin: DeepSidianPlugin) {
     super(leaf);
@@ -288,7 +313,13 @@ export class DeepSidianView extends ItemView {
     await this.persistCurrentSession();
   }
 
+  /** 语言等设置变更后由插件调用，重建整个侧栏 UI。 */
+  rerender() {
+    this.render();
+  }
+
   private render() {
+    this.t = createTranslator(this.plugin.settings.language);
     const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
     container.addClass("deepsidian-view");
@@ -345,7 +376,7 @@ export class DeepSidianView extends ItemView {
     this.inputEl = inputShellEl.createEl("textarea", {
       cls: "deepsidian-input",
       attr: {
-        placeholder: "How can I help you today?"
+        placeholder: this.t("inputPlaceholder")
       }
     });
 
@@ -355,15 +386,15 @@ export class DeepSidianView extends ItemView {
     // 模型切换：点击弹出菜单选择 flash / pro
     const modelPill = footerLeftEl.createEl("button", {
       cls: "deepsidian-pill deepsidian-model-pill",
-      attr: { type: "button", title: "选择模型" }
+      attr: { type: "button", title: this.t("pickModel") }
     });
     const renderModelPill = () => modelPill.setText(this.plugin.settings.model.replace("deepseek-v4-", ""));
     renderModelPill();
     modelPill.addEventListener("click", (event) => {
       const menu = new Menu();
       const hints: Record<string, string> = {
-        "deepseek-v4-flash": "便宜快，日常首选",
-        "deepseek-v4-pro": "更强，复杂任务"
+        "deepseek-v4-flash": this.t("modelHintFlash"),
+        "deepseek-v4-pro": this.t("modelHintPro")
       };
       for (const model of MODEL_OPTIONS) {
         menu.addItem((item) => {
@@ -384,7 +415,7 @@ export class DeepSidianView extends ItemView {
     // 思考深度：点击弹出菜单选择 Low / Med / High / Max
     const thinkingPill = footerLeftEl.createEl("button", {
       cls: "deepsidian-pill deepsidian-thinking-pill",
-      attr: { type: "button", title: "选择思考深度" }
+      attr: { type: "button", title: this.t("pickThinking") }
     });
     const renderThinkingPill = () => {
       thinkingPill.empty();
@@ -397,7 +428,12 @@ export class DeepSidianView extends ItemView {
       const menu = new Menu();
       for (const level of THINKING_LEVELS) {
         const rounds = THINKING_CONFIG[level].reflectionRounds;
-        const hint = rounds === 0 ? "不思考，最快" : `思考 + ${rounds} 轮自我反思`;
+        const hint =
+          rounds === 0
+            ? this.t("thinkHintOff")
+            : this.plugin.settings.language === "en"
+              ? `thinking + ${rounds} reflection${rounds > 1 ? "s" : ""}`
+              : `思考 + ${rounds} 轮自我反思`;
         menu.addItem((item) => {
           item
             .setTitle(`${THINKING_LEVEL_LABELS[level]} · ${hint}`)
@@ -425,7 +461,7 @@ export class DeepSidianView extends ItemView {
       }
     });
     this.writeToggleEl.checked = this.plugin.settings.enableVaultWrites;
-    writeLabelEl.createSpan({ text: "写入" });
+    writeLabelEl.createSpan({ text: this.t("write") });
     // 底栏“写入”= 总开关：一开即放开全部细粒度写入权限；想精细控制再去设置里关单项。
     this.writeToggleEl.addEventListener("change", async () => {
       const on = this.writeToggleEl.checked;
@@ -441,7 +477,7 @@ export class DeepSidianView extends ItemView {
     });
     const bashToggle = bashLabelEl.createEl("input", { attr: { type: "checkbox" } });
     bashToggle.checked = this.plugin.settings.enableBash;
-    bashLabelEl.createSpan({ text: "命令" });
+    bashLabelEl.createSpan({ text: this.t("command") });
     bashToggle.addEventListener("change", async () => {
       this.plugin.settings.enableBash = bashToggle.checked;
       await this.plugin.saveSettings();
@@ -450,8 +486,8 @@ export class DeepSidianView extends ItemView {
     this.sendButtonEl = composerActionsEl.createEl("button", {
       cls: "deepsidian-send",
       attr: {
-        "aria-label": "发送",
-        "title": "发送"
+        "aria-label": this.t("send"),
+        "title": this.t("send")
       }
     });
     setIcon(this.sendButtonEl, "send-horizontal");
@@ -509,8 +545,8 @@ export class DeepSidianView extends ItemView {
     const newChatButton = this.sessionBarEl.createEl("button", {
       cls: "deepsidian-session-button",
       attr: {
-        "aria-label": "New Chat",
-        "title": "New Chat"
+        "aria-label": this.t("newChat"),
+        "title": this.t("newChat")
       }
     });
     setIcon(newChatButton, "plus");
@@ -521,8 +557,8 @@ export class DeepSidianView extends ItemView {
     const historyButton = this.sessionBarEl.createEl("button", {
       cls: "deepsidian-session-button",
       attr: {
-        "aria-label": "Chat history",
-        "title": "Chat history"
+        "aria-label": this.t("history"),
+        "title": this.t("history")
       }
     });
     setIcon(historyButton, "history");
@@ -555,7 +591,7 @@ export class DeepSidianView extends ItemView {
     const session = await this.plugin.loadSession(sessionId);
 
     if (!session) {
-      new Notice("没有找到这个会话。");
+      new Notice(this.t("sessionNotFound"));
       return;
     }
 
@@ -609,10 +645,10 @@ export class DeepSidianView extends ItemView {
         alt: ""
       }
     });
-    this.emptyStateEl.createDiv({ cls: "deepsidian-empty-title", text: "How's it going?" });
+    this.emptyStateEl.createDiv({ cls: "deepsidian-empty-title", text: this.t("emptyTitle") });
     this.emptyStateEl.createDiv({
       cls: "deepsidian-empty-subtitle",
-      text: "读笔记、搜库、改写选区、抓网页，或者让 DeepSidian 直接整理当前文件。"
+      text: this.t("emptySubtitle")
     });
   }
 
@@ -658,7 +694,7 @@ export class DeepSidianView extends ItemView {
     });
 
     const modelRow = this.settingsPanelEl.createDiv({ cls: "deepsidian-setting-row" });
-    modelRow.createEl("label", { text: "模型" });
+    modelRow.createEl("label", { text: this.t("inlineModel") });
     const modelSelect = modelRow.createEl("select");
     for (const model of ["deepseek-v4-flash", "deepseek-v4-pro"]) {
       modelSelect.createEl("option", {
@@ -677,7 +713,7 @@ export class DeepSidianView extends ItemView {
     const contextLabel = toggleRow.createEl("label");
     const contextToggle = contextLabel.createEl("input", { attr: { type: "checkbox" } });
     contextToggle.checked = this.plugin.settings.includeActiveNote;
-    contextLabel.createSpan({ text: "自动带上当前笔记" });
+    contextLabel.createSpan({ text: this.t("inlineIncludeNote") });
     contextToggle.addEventListener("change", async () => {
       this.plugin.settings.includeActiveNote = contextToggle.checked;
       await this.plugin.saveSettings();
@@ -686,7 +722,7 @@ export class DeepSidianView extends ItemView {
     const writeLabel = toggleRow.createEl("label");
     const writeToggle = writeLabel.createEl("input", { attr: { type: "checkbox" } });
     writeToggle.checked = this.plugin.settings.enableVaultWrites;
-    writeLabel.createSpan({ text: "允许写入笔记（总开关）" });
+    writeLabel.createSpan({ text: this.t("inlineAllowWrite") });
     writeToggle.addEventListener("change", async () => {
       const on = writeToggle.checked;
       this.plugin.settings.enableVaultWrites = on;
@@ -699,20 +735,20 @@ export class DeepSidianView extends ItemView {
     });
 
     const permissionRow = this.settingsPanelEl.createDiv({ cls: "deepsidian-setting-row deepsidian-setting-row-inline deepsidian-write-permissions" });
-    this.renderInlineWritePermission(permissionRow, "createNotes", "新建");
-    this.renderInlineWritePermission(permissionRow, "editNotes", "编辑");
-    this.renderInlineWritePermission(permissionRow, "appendActiveNote", "追加");
-    this.renderInlineWritePermission(permissionRow, "insertAtCursor", "选区");
-    this.renderInlineWritePermission(permissionRow, "downloadAttachments", "附件");
+    this.renderInlineWritePermission(permissionRow, "createNotes", this.t("permShortCreate"));
+    this.renderInlineWritePermission(permissionRow, "editNotes", this.t("permShortEdit"));
+    this.renderInlineWritePermission(permissionRow, "appendActiveNote", this.t("permShortAppend"));
+    this.renderInlineWritePermission(permissionRow, "insertAtCursor", this.t("permShortInsert"));
+    this.renderInlineWritePermission(permissionRow, "downloadAttachments", this.t("permShortDownload"));
 
     const testButton = this.settingsPanelEl.createEl("button", { cls: "deepsidian-secondary-button" });
-    testButton.setText("测试连接");
+    testButton.setText(this.t("testBtn"));
     testButton.addEventListener("click", async () => {
       testButton.disabled = true;
-      testButton.setText("测试中...");
+      testButton.setText(this.t("testing"));
       await this.plugin.testConnection();
       testButton.disabled = false;
-      testButton.setText("测试连接");
+      testButton.setText(this.t("testBtn"));
     });
   }
 
@@ -746,7 +782,7 @@ export class DeepSidianView extends ItemView {
     }
 
     if (!this.plugin.settings.apiKey.trim()) {
-      new Notice("请先点击侧边栏右上角设置，填写 DeepSeek API Key。");
+      new Notice(this.t("needApiKey"));
       this.settingsOpen = true;
       this.renderInlineSettings();
       return;
@@ -764,7 +800,7 @@ export class DeepSidianView extends ItemView {
 
     // 思考气泡：弹跳的小鲸鱼 + 实时计时；开始流式输出后会被正文替换。
     const pendingEl = this.transcriptEl.createDiv({ cls: "deepsidian-bubble deepsidian-bubble-assistant" });
-    this.renderThinkingIndicator(pendingEl, "思考中");
+    this.renderThinkingIndicator(pendingEl, this.t("thinking"));
     this.transcriptEl.scrollTo({ top: this.transcriptEl.scrollHeight });
 
     const thinkingStart = Date.now();
@@ -787,7 +823,7 @@ export class DeepSidianView extends ItemView {
       this.addUsage(result.usage);
 
       if (abort.signal.aborted) {
-        await this.renderMarkdown(pendingEl, result.content || "已中断。");
+        await this.renderMarkdown(pendingEl, result.content || this.t("interrupted"));
         return;
       }
 
@@ -804,13 +840,13 @@ export class DeepSidianView extends ItemView {
       void this.maybeCompactHistory();
     } catch (error) {
       if (abort.signal.aborted) {
-        pendingEl.setText("已中断。");
+        pendingEl.setText(this.t("interrupted"));
         return;
       }
 
       const message = error instanceof Error ? error.message : String(error);
-      pendingEl.setText(`出错了：${message}`);
-      new Notice(`DeepSidian 请求失败：${message}`, 8000);
+      pendingEl.setText(this.t("requestFailed") + message);
+      new Notice(this.t("requestFailed") + message, 8000);
     } finally {
       window.clearInterval(thinkTimer);
       this.activeTurnId = null;
@@ -844,7 +880,11 @@ export class DeepSidianView extends ItemView {
         onTodoUpdate: (markdown) => this.renderTodoPanel(markdown),
         onReflect: (round, total) => {
           typewriter.reset();
-          this.renderThinkingIndicator(pendingEl, `第 ${round}/${total} 轮反思`);
+          const reflectLabel =
+            this.plugin.settings.language === "en"
+              ? `Reflecting ${round}/${total}`
+              : `第 ${round}/${total} 轮反思`;
+          this.renderThinkingIndicator(pendingEl, reflectLabel);
         },
         onAssistantDelta: (content) => {
           if (!this.turnFirstTokenAt) {
@@ -1038,7 +1078,7 @@ export class DeepSidianView extends ItemView {
     const messages: DeepSeekMessage[] = [
       {
         role: "system",
-        content: SYSTEM_PROMPT
+        content: SYSTEM_PROMPTS[this.plugin.settings.language] ?? SYSTEM_PROMPTS.zh
       }
     ];
 
@@ -1073,12 +1113,24 @@ export class DeepSidianView extends ItemView {
     const summarizedCount = Math.min(this.currentSession?.summarizedCount ?? 0, this.conversation.length);
     const summary = this.currentSession?.summary?.trim();
 
+    const isEn = this.plugin.settings.language === "en";
+
     if (summary) {
       messages.push({
         role: "system",
-        content: `对话前情提要（早期内容的压缩，仅作延续参考）：\n${summary}`
+        content: isEn
+          ? `Conversation summary so far (compressed earlier turns, for continuity only):\n${summary}`
+          : `对话前情提要（早期内容的压缩，仅作延续参考）：\n${summary}`
       });
     }
+
+    // 用户消息前再放一条就近的语言提醒，压过上面可能为中文的上下文（笔记/记忆等）。
+    messages.push({
+      role: "system",
+      content: isEn
+        ? "Reminder: reply to the user in English, regardless of the language of the notes or context above."
+        : "提醒：始终用中文回答。"
+    });
 
     // 未压缩的近期消息（compaction 由 token 预算驱动，会把更早的折进摘要）。再兜底一道防极端长尾。
     const recentHistory = this.conversation.slice(summarizedCount).slice(-MAX_HISTORY_MESSAGES);
@@ -1122,7 +1174,7 @@ export class DeepSidianView extends ItemView {
     cardEl.open = true;
     const summaryEl = cardEl.createEl("summary");
     summaryEl.createSpan({ cls: "deepsidian-tool-name", text: toolCall.function.name });
-    const statusEl = summaryEl.createSpan({ cls: "deepsidian-tool-status", text: "运行中" });
+    const statusEl = summaryEl.createSpan({ cls: "deepsidian-tool-status", text: this.t("toolRunning") });
 
     const argsEl = cardEl.createEl("pre", { cls: "deepsidian-tool-args" });
     argsEl.setText(JSON.stringify(args, null, 2));
@@ -1141,7 +1193,7 @@ export class DeepSidianView extends ItemView {
   ) {
     elements.cardEl.removeClass("is-running");
     elements.cardEl.addClass(ok ? "is-ok" : "is-error");
-    elements.statusEl.setText(ok ? "完成" : "失败");
+    elements.statusEl.setText(ok ? this.t("toolDone") : this.t("toolFailed"));
     elements.resultEl.setText(content);
     elements.cardEl.open = false;
 
@@ -1267,7 +1319,7 @@ export class DeepSidianView extends ItemView {
 
       cardEl.removeClass("is-running");
       cardEl.addClass(result.ok ? "is-ok" : "is-error");
-      statusEl?.setText(result.ok ? "完成" : "失败");
+      statusEl?.setText(result.ok ? this.t("toolDone") : this.t("toolFailed"));
       resultEl?.setText(result.content);
       this.renderToolActionButtons(cardEl, run);
       await this.persistCurrentSession();
@@ -1288,7 +1340,10 @@ export class DeepSidianView extends ItemView {
     if (thinkingMs && thinkingMs > 0) {
       const badge = bubbleEl.createDiv({ cls: "deepsidian-think-badge" });
       this.appendWhaleImg(badge, 13);
-      badge.createSpan({ text: `思考 ${(thinkingMs / 1000).toFixed(1)}s` });
+      const seconds = (thinkingMs / 1000).toFixed(1);
+      badge.createSpan({
+        text: this.plugin.settings.language === "en" ? `Thought ${seconds}s` : `思考 ${seconds}s`
+      });
       bubbleEl.insertBefore(badge, bubbleEl.firstChild);
     }
 
@@ -1327,7 +1382,7 @@ export class DeepSidianView extends ItemView {
 
     const button = bubbleEl.createEl("button", {
       cls: "deepsidian-copy-button",
-      attr: { "aria-label": "复制", title: "复制" }
+      attr: { "aria-label": this.t("copy"), title: this.t("copy") }
     });
     setIcon(button, "copy");
 
@@ -1350,8 +1405,8 @@ export class DeepSidianView extends ItemView {
     // 忙碌时按钮变成“停止”，仍可点击以中断当前请求。
     this.sendButtonEl.empty();
     setIcon(this.sendButtonEl, isBusy ? "square" : "send-horizontal");
-    this.sendButtonEl.setAttribute("title", isBusy ? "停止" : "发送");
-    this.sendButtonEl.setAttribute("aria-label", isBusy ? "停止" : "发送");
+    this.sendButtonEl.setAttribute("title", isBusy ? this.t("stop") : this.t("send"));
+    this.sendButtonEl.setAttribute("aria-label", isBusy ? this.t("stop") : this.t("send"));
   }
 
   private confirmCommand(command: string, description?: string): Promise<boolean> {
@@ -1443,8 +1498,12 @@ export class DeepSidianView extends ItemView {
       return null;
     }
 
-    const clipped = selection.length > 4000 ? `${selection.slice(0, 4000)}\n\n[选区过长，已截断。]` : selection;
-    return `用户当前在编辑器中选中的文本：\n${clipped}`;
+    const isEn = this.plugin.settings.language === "en";
+    const truncNote = isEn ? "[Selection is long; truncated.]" : "[选区过长，已截断。]";
+    const clipped = selection.length > 4000 ? `${selection.slice(0, 4000)}\n\n${truncNote}` : selection;
+    return isEn
+      ? `Text the user has selected in the editor:\n${clipped}`
+      : `用户当前在编辑器中选中的文本：\n${clipped}`;
   }
 
   private renderTodoPanel(markdown: string) {
@@ -1454,7 +1513,7 @@ export class DeepSidianView extends ItemView {
 
     this.todoPanelEl.empty();
     this.todoPanelEl.removeClass("is-hidden");
-    this.todoPanelEl.createDiv({ cls: "deepsidian-todo-header", text: "任务进度" });
+    this.todoPanelEl.createDiv({ cls: "deepsidian-todo-header", text: this.t("todoProgress") });
     const bodyEl = this.todoPanelEl.createDiv({ cls: "deepsidian-todo-body" });
     void this.renderMarkdown(bodyEl, markdown);
   }
@@ -1631,26 +1690,32 @@ export class DeepSidianView extends ItemView {
       return null;
     }
 
-    const parts: string[] = ["DeepSidian 会话工作记忆（压缩上下文，只作任务延续参考）："];
+    const isEn = this.plugin.settings.language === "en";
+    const sep = isEn ? "; " : "；";
+    const L = isEn
+      ? { head: "DeepSidian session working memory (compressed context, for task continuity only):", goal: "Current goal: ", files: "Related files: ", completed: "Completed: ", blockers: "Failed/blocked: ", notes: "Key conclusions: " }
+      : { head: "DeepSidian 会话工作记忆（压缩上下文，只作任务延续参考）：", goal: "当前目标：", files: "相关文件：", completed: "已完成：", blockers: "失败/阻塞：", notes: "关键结论：" };
+
+    const parts: string[] = [L.head];
 
     if (memory.currentGoal) {
-      parts.push(`当前目标：${memory.currentGoal}`);
+      parts.push(`${L.goal}${memory.currentGoal}`);
     }
 
     if (memory.files.length) {
-      parts.push(`相关文件：${memory.files.slice(-8).join("；")}`);
+      parts.push(`${L.files}${memory.files.slice(-8).join(sep)}`);
     }
 
     if (memory.completed.length) {
-      parts.push(`已完成：${memory.completed.slice(-8).join("；")}`);
+      parts.push(`${L.completed}${memory.completed.slice(-8).join(sep)}`);
     }
 
     if (memory.blockers.length) {
-      parts.push(`失败/阻塞：${memory.blockers.slice(-6).join("；")}`);
+      parts.push(`${L.blockers}${memory.blockers.slice(-6).join(sep)}`);
     }
 
     if (memory.notes.length) {
-      parts.push(`关键结论：${memory.notes.slice(-5).join("；")}`);
+      parts.push(`${L.notes}${memory.notes.slice(-5).join(sep)}`);
     }
 
     return parts.length > 1 ? parts.join("\n") : null;

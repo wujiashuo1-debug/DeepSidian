@@ -1,5 +1,7 @@
 export const VIEW_TYPE_DEEPSIDIAN = "deepsidian-chat-view";
 
+export type Lang = "zh" | "en";
+
 export type ThinkingLevel = "low" | "med" | "high" | "max";
 
 export const THINKING_LEVELS: ThinkingLevel[] = ["low", "med", "high", "max"];
@@ -41,6 +43,7 @@ export interface TokenUsage {
 }
 
 export interface DeepSidianSettings {
+  language: Lang;
   apiKey: string;
   baseUrl: string;
   model: string;
@@ -158,6 +161,7 @@ export interface DeepSidianSessionMemory {
 }
 
 export const DEFAULT_SETTINGS: DeepSidianSettings = {
+  language: "zh",
   apiKey: "",
   baseUrl: "https://api.deepseek.com",
   model: "deepseek-v4-flash",
